@@ -827,6 +827,14 @@ def food_db_count() -> int:
 _FOOD_WORD = re.compile(r"[a-z0-9]+")
 
 
+def _pretty(s):
+    """Title-case names USDA stores in ALL CAPS (branded products, e.g. 'MISSION, CARB
+    BALANCE'); leave already-mixed-case whole-food names ('Apples, raw') untouched."""
+    if not s or any(c.islower() for c in s):
+        return s
+    return re.sub(r"[A-Za-z][A-Za-z']*", lambda m: m.group(0).capitalize(), s)
+
+
 def search_foods(query: str, limit: int = 20) -> list[dict]:
     """Full-text search the local foods DB (whole + branded). Each query word becomes a
     prefix term, AND-combined — so 'mission carb tortilla' finds the Mission Carb Balance
@@ -877,6 +885,8 @@ def search_foods(query: str, limit: int = 20) -> list[dict]:
             continue
         seen.add(key)
         d = dict(r); d.pop("is_whole", None)
+        d["name"] = _pretty(d["name"])      # tidy ALL-CAPS branded names for display
+        d["brand"] = _pretty(d["brand"])
         out.append(d)
         if len(out) >= limit:
             break
