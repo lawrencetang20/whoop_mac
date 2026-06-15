@@ -178,6 +178,56 @@ enum WhoopTint {
     static let food = Color(red: 0.98, green: 0.57, blue: 0.24)
 }
 
+// MARK: - Shared design system (used by app, menu popover AND the widget extension)
+
+/// The one near-black canvas all three surfaces sit on. Lives here (not in the app-only `P`)
+/// so the widget extension matches exactly instead of drifting bluer/lighter.
+extension Color {
+    static let whoopBG = Color(red: 0.024, green: 0.024, blue: 0.031)
+}
+
+/// One easing/duration family so count-ups, the ring sweep and the center number all land
+/// together as a single gesture across every surface.
+enum Motion {
+    static let settle = Animation.easeOut(duration: 0.9)
+    static let settleQuick = Animation.easeOut(duration: 0.55)
+}
+
+/// Recovery zone in words (matches the menu pill + widget label).
+func zoneName(_ s: Int) -> String { s >= 67 ? "High" : s >= 34 ? "Medium" : "Low" }
+
+/// Parse WHOOP's ISO8601 timestamps (with or without fractional seconds).
+func parseISODate(_ iso: String?) -> Date? {
+    guard let iso else { return nil }
+    let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = f.date(from: iso) { return d }
+    f.formatOptions = [.withInternetDateTime]
+    return f.date(from: iso)
+}
+
+/// "Updated 2h ago" for the widget's freshness line (nil when there's no valid timestamp).
+func freshnessText(_ iso: String?, now: Date = Date()) -> String? {
+    guard let d = parseISODate(iso) else { return nil }
+    let r = RelativeDateTimeFormatter(); r.unitsStyle = .abbreviated
+    return "Updated " + r.localizedString(for: d, relativeTo: now)
+}
+
+/// A staggered fade+rise that assembles a screen on appear; `index` sets the per-row delay.
+/// Shared so the dashboard Overview and the menu popover use one identical entrance.
+struct Reveal: ViewModifier {
+    let index: Int
+    let on: Bool
+    func body(content: Content) -> some View {
+        content
+            .opacity(on ? 1 : 0)
+            .offset(y: on ? 0 : 10)
+            .animation(.spring(response: 0.45, dampingFraction: 0.85).delay(Double(index) * 0.055), value: on)
+    }
+}
+extension View {
+    func reveal(_ index: Int, _ on: Bool) -> some View { modifier(Reveal(index: index, on: on)) }
+}
+
 // MARK: - Formatting helpers (shared by both targets)
 
 /// "7h 12m" from decimal hours, "--" when nil / invalid.
@@ -249,7 +299,7 @@ struct RecoveryRing: View {
                 )
                 .rotationEffect(.degrees(-90))
                 .shadow(color: color.opacity(0.35), radius: 4)
-                .animation(.easeOut(duration: 0.9), value: fraction)
+                .animation(Motion.settle, value: fraction)
 
             // Center label
             VStack(spacing: 1) {
@@ -258,8 +308,8 @@ struct RecoveryRing: View {
                         CountingNumber(value: shown)
                             .font(.system(size: valueFontSize, weight: .bold, design: .rounded))
                             .foregroundStyle(color)
-                            .onAppear { shown = 0; withAnimation(.easeOut(duration: 1.05)) { shown = Double(s) } }
-                            .onChange(of: s) { _, n in withAnimation(.easeOut(duration: 0.7)) { shown = Double(n) } }
+                            .onAppear { shown = 0; withAnimation(Motion.settle) { shown = Double(s) } }
+                            .onChange(of: s) { _, n in withAnimation(Motion.settleQuick) { shown = Double(n) } }
                     } else {
                         Text(score.map(String.init) ?? "--")
                             .font(.system(size: valueFontSize, weight: .bold, design: .rounded))

@@ -59,20 +59,17 @@ struct MenuBarBadge: View {
     }
 }
 
-// MARK: - Staggered reveal (the panel assembles top-to-bottom on open)
+// MARK: - Press feedback (the staggered Reveal modifier now lives in WhoopShared.swift)
 
-private struct Reveal: ViewModifier {
-    let index: Int
-    let on: Bool
-    func body(content: Content) -> some View {
-        content
-            .opacity(on ? 1 : 0)
-            .offset(y: on ? 0 : 10)
-            .animation(.spring(response: 0.45, dampingFraction: 0.85).delay(Double(index) * 0.055), value: on)
+/// A shallow, non-bouncy press response shared by every clickable surface in the popover,
+/// so a click feels physical instead of dead. Composes with each card's hover lift.
+private struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
-}
-private extension View {
-    func reveal(_ index: Int, _ on: Bool) -> some View { modifier(Reveal(index: index, on: on)) }
 }
 
 // MARK: - The popover panel
@@ -86,6 +83,7 @@ struct MenuBarPopover: View {
     @State private var syncError: String?
     @State private var appeared = false   // drives the entrance cascade (re-fires each open)
     @State private var visible = false    // gates repeatForever animations to on-screen only
+    @State private var openHover = false  // hover state for the primary "Open WHOOP" pill
 
     /// True only while the popover is actually on-screen. `controlActiveState` flips to .inactive
     /// when AppKit orders the panel out — reliable even when .onDisappear doesn't fire in
@@ -98,33 +96,48 @@ struct MenuBarPopover: View {
         let score = rec?.recovery_score
         let zone = recoveryColor(score)
 
+        // Edge states: nothing loaded yet. Offline (engine unreachable) gets a calm card;
+        // a genuine no-error cold load gets a redacted shimmer that resolves into real data.
+        let offline = data.latest == nil && (data.error != nil || syncError != nil)
+        let loadingCold = data.latest == nil && !offline
+
         VStack(alignment: .leading, spacing: 12) {
             header(score: score, zone: zone).reveal(0, appeared)
 
-            hero(rec: rec, recP: recP, score: score, zone: zone).reveal(1, appeared)
+            if offline {
+                coldStateCard().reveal(1, appeared)
+            } else {
+                Group {
+                    hero(rec: rec, recP: recP, score: score, zone: zone).reveal(1, appeared)
 
-            VStack(spacing: 8) {
-                recoveryPillar(rec: rec, recP: recP, zone: zone).reveal(2, appeared)
-                sleepPillar().reveal(3, appeared)
-                strainPillar().reveal(4, appeared)
-            }
+                    VStack(spacing: 8) {
+                        recoveryPillar(rec: rec, recP: recP, zone: zone).reveal(2, appeared)
+                        sleepPillar().reveal(3, appeared)
+                        strainPillar().reveal(4, appeared)
+                    }
+                }
+                .redacted(reason: loadingCold ? .placeholder : [])
+                .shimmering(active: loadingCold)
+                .animation(.easeOut(duration: 0.3), value: loadingCold)
 
-            if let w = data.workouts.first {
-                workoutStrip(w).reveal(5, appeared)
-            }
+                if let w = data.workouts.first {
+                    WorkoutStrip(workout: w) { open(.activities) }.reveal(5, appeared)
+                }
 
-            if let err = syncError ?? data.error {
-                Label(err, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(P.yellow)
-                    .lineLimit(2)
-                    .reveal(6, appeared)
+                // Warm failure only (data present but the last sync failed) — a quiet inline note.
+                if let err = syncError ?? data.error {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(P.yellow)
+                        .lineLimit(2)
+                        .reveal(6, appeared)
+                }
             }
 
             footer().reveal(6, appeared)
         }
         .padding(15)
-        .frame(width: 322)
+        .frame(width: 372)
         .background(P.bg)
         .environment(\.colorScheme, .dark)
         .task { await data.load(days: 30) }   // always refetch on open — never show a stale panel
@@ -146,7 +159,7 @@ struct MenuBarPopover: View {
                     .scaleEffect(active ? 1.25 : 1.0)
                     .opacity(active ? 0.6 : 1.0)
                     .animation(active ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true) : .default, value: active)
-                Text("WHOOP").font(.system(size: 13, weight: .heavy)).tracking(3)
+                Text("WHOOP").font(.system(size: 12, weight: .heavy)).tracking(3)
                 if let s = score {
                     Text(zoneName(s).uppercased())
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -163,13 +176,38 @@ struct MenuBarPopover: View {
         }
     }
 
+    // MARK: Cold / offline state — calm card instead of a wall of "--"
+
+    @ViewBuilder
+    private func coldStateCard() -> some View {
+        VStack(spacing: 12) {
+            RecoveryRing(score: nil, lineWidth: 8, valueFontSize: 26, showCaption: false, animate: false)
+                .frame(width: 64, height: 64)
+            VStack(spacing: 4) {
+                Text(data.loading ? "Connecting…" : "WHOOP engine offline")
+                    .font(.system(size: 13, weight: .bold))
+                Text((syncError ?? data.error) ?? "Start the WHOOP engine to see your data.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 22).padding(.horizontal, 14)
+        .background(Color.white.opacity(0.04))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.stroke))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     // MARK: Hero — ring + greeting + day-over-day delta + status line
 
     @ViewBuilder
     private func hero(rec: LatestStats.Rec?, recP: LatestStats.Rec?, score: Int?, zone: Color) -> some View {
         let heroDelta = dII(score, recP?.recovery_score)
         HStack(spacing: 14) {
-            RecoveryRing(score: score, lineWidth: 9, valueFontSize: 30, showCaption: true, animate: true)
+            // No "RECOVERY" caption here — at 78pt it crowds the ring; the header zone pill,
+            // the status line, and the menu-bar badge already say this is recovery.
+            RecoveryRing(score: score, lineWidth: 9, valueFontSize: 30, showCaption: false, animate: true)
                 .frame(width: 78, height: 78)
                 .overlay {
                     if let s = score, s >= 67, active { GreenCelebration(color: zone).frame(width: 78, height: 78) }
@@ -226,7 +264,7 @@ struct MenuBarPopover: View {
             VStack(alignment: .trailing, spacing: 3) {
                 ProgressBarMini(fraction: frac ?? 0, accent: P.blue)
                 Text(slp?.performance.map { "\(Int($0.rounded()))% PERF" } ?? "vs need")
-                    .font(.system(size: 8.5, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 8.5, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.8)
             }
         }
@@ -245,41 +283,9 @@ struct MenuBarPopover: View {
             VStack(alignment: .trailing, spacing: 3) {
                 ProgressBarMini(fraction: (str?.strain).map { $0 / 21 } ?? 0, accent: P.teal)
                 Text(str?.average_heart_rate.map { "AVG \($0)" } ?? "of 21")
-                    .font(.system(size: 8.5, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 8.5, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.8)
             }
-        }
-    }
-
-    // MARK: Latest workout strip (only when there is one)
-
-    private func workoutStrip(_ w: WorkoutRow) -> some View {
-        Button { open(.activities) } label: {
-            HStack(spacing: 10) {
-                Text(sportEmoji(w.sport_name)).font(.system(size: 18))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("LAST WORKOUT").font(.system(size: 8, weight: .heavy)).tracking(0.5).foregroundStyle(.secondary)
-                    Text((w.sport_name ?? "Activity").capitalized).font(.system(size: 12, weight: .bold)).lineLimit(1)
-                }
-                Spacer(minLength: 6)
-                miniStat("STRAIN", one(w.strain))
-                miniStat("HR", intStr(w.average_heart_rate))
-                if let d = w.distance_meter, d > 0 { miniStat("KM", String(format: "%.2f", d / 1000)) }
-                else { miniStat("CAL", grp(w.calories)) }
-            }
-            .padding(.vertical, 8).padding(.horizontal, 11)
-            .frame(maxWidth: .infinity)
-            .background(P.violet.opacity(0.08))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.violet.opacity(0.22)))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func miniStat(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 1) {
-            Text(value).font(.system(size: 11.5, weight: .semibold, design: .rounded)).monospacedDigit()
-            Text(label).font(.system(size: 8.5, weight: .semibold)).foregroundStyle(.secondary)
         }
     }
 
@@ -296,43 +302,29 @@ struct MenuBarPopover: View {
                 }
                 .padding(.vertical, 7).padding(.horizontal, 12)
                 .frame(maxWidth: .infinity)
-                .background(P.teal.opacity(0.16))
-                .overlay(Capsule().stroke(P.teal.opacity(0.4)))
+                .background(P.teal.opacity(openHover ? 0.24 : 0.16))
+                .overlay(Capsule().stroke(P.teal.opacity(openHover ? 0.6 : 0.4)))
                 .clipShape(Capsule())
                 .foregroundStyle(P.teal)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
+            .onHover { h in withAnimation(.easeOut(duration: 0.18)) { openHover = h } }
 
-            iconButton("arrow.clockwise", help: "Sync now", spinning: syncing) {
+            IconButton(icon: "arrow.clockwise", help: "Sync now", spinning: syncing) {
                 Task { await syncNow() }
             }
             .disabled(syncing)
 
-            iconButton("safari", help: "Open web dashboard") {
+            IconButton(icon: "safari", help: "Open web dashboard") {
                 NSWorkspace.shared.open(URL(string: "http://localhost:8756")!)
             }
 
             Spacer(minLength: 0)
 
-            iconButton("power", help: "Quit", tint: .secondary) {
+            IconButton(icon: "power", help: "Quit", tint: .secondary) {
                 NSApplication.shared.terminate(nil)
             }
         }
-    }
-
-    private func iconButton(_ icon: String, help: String, spinning: Bool = false, tint: Color = .primary, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(Color.white.opacity(0.05), in: Circle())
-                .overlay(Circle().stroke(P.stroke))
-                .rotationEffect(.degrees(spinning ? 360 : 0))
-                .animation(spinning ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: spinning)
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 
     // MARK: Helpers
@@ -405,8 +397,18 @@ private struct PillarRow<Trailing: View>: View {
 
     var body: some View {
         Button { onTap?() } label: { card }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
             .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+    }
+
+    /// The 30-day trend line — collapsed entirely when there's too little history to plot, so a
+    /// fresh/short-history account doesn't show an empty 44pt void on the row's right edge.
+    @ViewBuilder private var trend: some View {
+        if sparkValues.count >= 2 {
+            Sparkline(values: sparkValues, color: accent)
+                .frame(width: 44, height: 22)
+                .drawIn()
+        }
     }
 
     private var card: some View {
@@ -420,21 +422,19 @@ private struct PillarRow<Trailing: View>: View {
                 Text(label).font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     CountUp(value: value, render: render)
-                        .font(.system(size: 17, weight: .bold, design: .rounded)).monospacedDigit()
+                        .font(.system(size: 18, weight: .bold, design: .rounded)).monospacedDigit()
                     if !unit.isEmpty {
                         Text(unit).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                     }
                     TrendChip(delta: delta, unit: deltaUnit, decimals: deltaDecimals)
                 }
-                .lineLimit(1).minimumScaleFactor(0.7)   // never wrap/clip the headline number
+                .lineLimit(1).minimumScaleFactor(0.8)   // safety net only — at 372pt nothing should scale
             }
             .layoutPriority(1)
-            Spacer(minLength: 4)
+            Spacer(minLength: 6)
             trailing
-                .frame(width: 52, alignment: .trailing)  // cap trailing so a wide caption can't push the row over
-            Sparkline(values: sparkValues, color: accent)
-                .frame(width: 38, height: 22)
-                .drawIn()
+                .frame(width: 60, alignment: .trailing)  // room for "100% PERF" / "AVG 180" at full size
+            trend
         }
         .padding(.vertical, 9).padding(.horizontal, 11)
         .frame(maxWidth: .infinity)
@@ -446,12 +446,79 @@ private struct PillarRow<Trailing: View>: View {
     }
 }
 
+// MARK: - Latest workout strip (its own card so it has hover + press like the pillars)
+
+private struct WorkoutStrip: View {
+    let workout: WorkoutRow
+    var onTap: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Text(sportEmoji(workout.sport_name)).font(.system(size: 18))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("LAST WORKOUT").font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
+                    Text((workout.sport_name ?? "Activity").capitalized).font(.system(size: 12, weight: .bold)).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                miniStat("STRAIN", one(workout.strain))
+                miniStat("HR", intStr(workout.average_heart_rate))
+                if let d = workout.distance_meter, d > 0 { miniStat("KM", String(format: "%.2f", d / 1000)) }
+                else { miniStat("CAL", grp(workout.calories)) }
+            }
+            .padding(.vertical, 8).padding(.horizontal, 11)
+            .frame(maxWidth: .infinity)
+            .background(P.violet.opacity(hover ? 0.13 : 0.08))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.violet.opacity(hover ? 0.4 : 0.22)))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .scaleEffect(hover ? 1.012 : 1)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+    }
+
+    private func miniStat(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 1) {
+            Text(value).font(.system(size: 11.5, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(label).font(.system(size: 8.5, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Footer icon button (28pt circle with hover-lift + press + optional spin)
+
+private struct IconButton: View {
+    let icon: String
+    let help: String
+    var spinning: Bool = false
+    var tint: Color = .primary
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(hover ? 0.10 : 0.05), in: Circle())
+                .overlay(Circle().stroke(hover ? tint.opacity(0.4) : P.stroke))
+                .rotationEffect(.degrees(spinning ? 360 : 0))
+                .animation(spinning ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: spinning)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .help(help)
+        .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+    }
+}
+
 // MARK: - Mini progress bar (fixed width avoids the GeometryReader first-pass 0-width flash)
 
 private struct ProgressBarMini: View {
     let fraction: Double
     let accent: Color
-    var width: CGFloat = 52
+    var width: CGFloat = 56
     @State private var filled = false
 
     var body: some View {

@@ -10,7 +10,7 @@ import AppKit
 // MARK: - Palette
 
 enum P {
-    static let bg     = Color(red: 0.024, green: 0.024, blue: 0.031)
+    static let bg     = Color.whoopBG
     static let green  = Color(red: 0.20, green: 0.83, blue: 0.60)
     static let teal   = Color(red: 0.18, green: 0.83, blue: 0.74)
     static let blue   = Color(red: 0.38, green: 0.65, blue: 0.98)
@@ -63,16 +63,7 @@ func one(_ v: Double?) -> String { v == nil ? "--" : String(format: "%.1f", v!) 
 func trim1(_ v: Double?) -> String { guard let v, v.isFinite else { return "--" }; return v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v) }
 func grp(_ v: Double?) -> String { guard let v, v.isFinite else { return "--" }; return Int(v).formatted(.number.grouping(.automatic)) }
 func intStr(_ v: Int?, _ suffix: String = "") -> String { v == nil ? "--" : "\(v!)\(suffix)" }
-func zoneName(_ s: Int) -> String { s >= 67 ? "High" : s >= 34 ? "Medium" : "Low" }
-
-/// Parse WHOOP's ISO8601 timestamps (with or without fractional seconds).
-func parseISODate(_ iso: String?) -> Date? {
-    guard let iso else { return nil }
-    let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = f.date(from: iso) { return d }
-    f.formatOptions = [.withInternetDateTime]
-    return f.date(from: iso)
-}
+// zoneName(_:) and parseISODate(_:) now live in WhoopShared.swift (shared with the widget).
 
 func relativeSync(_ iso: String?) -> String { relativeSync(iso, now: Date()) }
 
@@ -227,7 +218,7 @@ struct CountUp: View {
     private func start() {
         guard let v = value else { return }
         shown = 0
-        withAnimation(.easeOut(duration: 0.9)) { shown = v }
+        withAnimation(Motion.settle) { shown = v }
     }
 }
 
@@ -381,6 +372,22 @@ func kv(_ k: String, _ v: String) -> some View {
         Text(v).font(.system(size: 13, weight: .semibold)).monospacedDigit() }
 }
 
+/// Canonical all-caps section eyebrow — same tracking as a Glass card title, so inline
+/// labels (INSIGHTS / AVERAGES / SLEEP / DAY STRAIN) read identically to titled cards.
+func sectionEyebrow(_ t: String) -> some View {
+    Text(t.uppercased()).font(.system(size: 11, weight: .heavy)).tracking(0.8).foregroundStyle(.secondary)
+}
+
+/// A designed empty state (icon + line, accent-tinted) for sparse ranges, instead of a bare
+/// gray sentence dropped into a premium card.
+func emptyState(_ icon: String, _ text: String, accent: Color) -> some View {
+    VStack(spacing: 8) {
+        Image(systemName: icon).font(.system(size: 22)).foregroundStyle(accent.opacity(0.6))
+        Text(text).font(.system(size: 13)).foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity).padding(.vertical, 24)
+}
+
 // Tiny inline trend chart for the hero cards.
 struct Sparkline: View {
     let values: [Double]
@@ -446,6 +453,28 @@ struct CalendarHeatmap: View {
 }
 
 // MARK: - Root
+
+/// The detail-header refresh button — styled like StatTile (white-opacity fill, P.stroke,
+/// hover) instead of stock AppKit chrome, and the arrow spins exactly once per press.
+struct RefreshButton: View {
+    let action: () -> Void
+    @State private var hover = false
+    @State private var spins = 0
+    var body: some View {
+        Button { spins += 1; action() } label: {
+            Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
+                .frame(width: 34, height: 34)
+                .background(Color.white.opacity(hover ? 0.07 : 0.04))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(hover ? P.teal.opacity(0.45) : P.stroke))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .rotationEffect(.degrees(Double(spins) * 360))
+                .animation(.easeInOut(duration: 0.6), value: spins)
+        }
+        .buttonStyle(.plain)
+        .help("Refresh")
+        .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+    }
+}
 
 struct WhoopMainView: View {
     @ObservedObject var data: WhoopData
@@ -541,10 +570,7 @@ struct WhoopMainView: View {
                 Text("6M").tag(180); Text("1Y").tag(365); Text("All").tag(1825)
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 300).controlSize(.large)
-            Button { Task { await data.load(days: days) } } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
-            }
-            .buttonStyle(.bordered).controlSize(.large).help("Refresh")
+            RefreshButton { Task { await data.load(days: days) } }
         }
     }
 
@@ -579,18 +605,20 @@ func recoveryStatus(_ score: Int?) -> String {
 /// glowing, recovery-zone-tinted panel.
 struct HeroCard: View {
     @ObservedObject var data: WhoopData
+    @Environment(\.controlActiveState) private var controlActive
     var body: some View {
         let rec = data.latest?.recovery
         let recP = data.latest?.recovery_prev
         let score = rec?.recovery_score
         let zone = recoveryColor(score)
+        let onScreen = controlActive != .inactive   // pause the breathing pulse when the window isn't key
         let name = (data.status?.profile?.first_name).flatMap { $0.isEmpty ? nil : ", \($0)" } ?? ""
         let delta: Double? = (score != nil && recP?.recovery_score != nil)
             ? Double(score! - recP!.recovery_score!) : nil
         HStack(alignment: .center, spacing: 30) {
             RecoveryRing(score: score, lineWidth: 16, valueFontSize: 54, showCaption: true, animate: true)
                 .frame(width: 184, height: 184)
-                .overlay { if let s = score, s >= 67 { GreenCelebration(color: zone).frame(width: 184, height: 184) } }
+                .overlay { if let s = score, s >= 67, onScreen { GreenCelebration(color: zone).frame(width: 184, height: 184) } }
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 10) {
                     Text("\(greeting())\(name)").font(.system(size: 21, weight: .bold))
@@ -637,17 +665,21 @@ struct HeroCard: View {
 
 struct OverviewSection: View {
     @ObservedObject var data: WhoopData
+    @State private var appeared = false
+    @State private var insShown = false   // INSIGHTS/AVERAGES often arrive a beat after the
+    @State private var sumShown = false   // section appears — let them ride the cascade too
     private let cols = [GridItem(.adaptive(minimum: 150), spacing: 12)]
     var body: some View {
         let slp = data.latest?.sleep, str = data.latest?.strain
         let slpP = data.latest?.sleep_prev, strP = data.latest?.strain_prev
         let sum = data.summary
+        let ins = computeInsights(data)
         VStack(alignment: .leading, spacing: 18) {
-            HeroCard(data: data)
+            HeroCard(data: data).reveal(0, appeared)
             HStack(alignment: .top, spacing: 18) {
                 Glass(accent: P.blue) {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text("SLEEP").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
+                        HStack { sectionEyebrow("SLEEP")
                             TrendChip(delta: deltaD(slp?.hours, slpP?.hours).map { $0 * 60 }, unit: "m") }
                         CountUp(value: slp?.hours, render: fmtHrs).font(.system(size: 33, weight: .bold))
                         kv("Performance", slp?.performance.map { "\(Int($0.rounded()))%" } ?? "--")
@@ -658,7 +690,7 @@ struct OverviewSection: View {
                 }
                 Glass(accent: P.teal) {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text("DAY STRAIN").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
+                        HStack { sectionEyebrow("DAY STRAIN")
                             TrendChip(delta: deltaD(str?.strain, strP?.strain), decimals: 1) }
                         CountUp(value: str?.strain, render: one).font(.system(size: 33, weight: .bold))
                         kv("Avg HR", intStr(str?.average_heart_rate, " bpm"))
@@ -668,10 +700,10 @@ struct OverviewSection: View {
                     }
                 }
             }
+            .reveal(1, appeared)
 
-            let ins = computeInsights(data)
             if !ins.isEmpty {
-                Text("INSIGHTS").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
+                sectionEyebrow("INSIGHTS").padding(.top, 2).reveal(2, appeared && insShown)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 14)], spacing: 14) {
                     ForEach(ins) { i in
                         Glass(accent: i.tone) {
@@ -685,10 +717,11 @@ struct OverviewSection: View {
                         }
                     }
                 }
+                .reveal(2, appeared && insShown)
             }
 
             if let s = sum {
-                Text("AVERAGES").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
+                sectionEyebrow("AVERAGES").padding(.top, 2).reveal(3, appeared && sumShown)
                 LazyVGrid(columns: cols, spacing: 12) {
                     StatTile(label: "Avg recovery", value: s.avg_recovery.map { "\(Int($0))%" } ?? "--")
                     StatTile(label: "Avg HRV", value: s.avg_hrv.map { "\(Int($0)) ms" } ?? "--")
@@ -699,8 +732,20 @@ struct OverviewSection: View {
                     StatTile(label: "Best recovery", value: s.max_recovery.map { "\($0)%" } ?? "--")
                     StatTile(label: "Workouts", value: "\(s.workout_count ?? 0)")
                 }
+                .reveal(3, appeared && sumShown)
             }
         }
+        // Assemble the four top-level rows on section-enter (re-fires only on appear, never on
+        // the 60s auto-refresh). INSIGHTS/AVERAGES fade in when their data first lands so a cold
+        // open cascades fully instead of snapping the bottom rows in. Same Reveal as the popover.
+        .onAppear {
+            appeared = false
+            insShown = !ins.isEmpty
+            sumShown = sum != nil
+            withAnimation { appeared = true }
+        }
+        .onChange(of: ins.isEmpty) { _, empty in withAnimation { insShown = !empty } }
+        .onChange(of: sum != nil) { _, has in withAnimation { sumShown = has } }
     }
     func deltaII(_ a: Int?, _ b: Int?) -> Double? { (a == nil || b == nil) ? nil : Double(a! - b!) }
     func deltaD(_ a: Double?, _ b: Double?) -> Double? { (a == nil || b == nil) ? nil : a! - b! }
@@ -766,7 +811,7 @@ struct RecoverySection: View {
                 }
             }
             Glass(title: "Recovery calendar", accent: P.green) {
-                if data.recovery.isEmpty { Text("No data in range").foregroundStyle(.secondary) }
+                if data.recovery.isEmpty { emptyState("calendar", "No recovery data in this range", accent: P.green) }
                 else { CalendarHeatmap(points: data.recovery).frame(height: 112) }
             }
         }
@@ -908,12 +953,18 @@ struct ActivitiesSection: View {
                 }
                 Glass(title: "Total strain by sport", accent: P.teal) {
                     Chart(data.sports) { s in
-                        BarMark(x: .value("Strain", s.total_strain ?? 0), y: .value("Sport", s.sport_name.capitalized)).foregroundStyle(P.teal.gradient)
-                    }.frame(height: max(140, CGFloat(data.sports.count) * 30))
+                        BarMark(x: .value("Strain", s.total_strain ?? 0), y: .value("Sport", s.sport_name.capitalized))
+                            .foregroundStyle(P.teal.gradient)
+                            .annotation(position: .trailing, alignment: .leading) {
+                                Text(trim1(s.total_strain)).font(.system(size: 10, weight: .bold)).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                    }
+                    .chartXScale(domain: 0...(max(data.sports.map { $0.total_strain ?? 0 }.max() ?? 1, 1) * 1.12))
+                    .frame(height: max(140, CGFloat(data.sports.count) * 30)).drawIn()
                 }
             }
             Glass(title: "Workouts", accent: P.violet) {
-                if data.workouts.isEmpty { Text("No workouts in range").foregroundStyle(.secondary) }
+                if data.workouts.isEmpty { emptyState("figure.run", "No workouts in this range", accent: P.violet) }
                 else {
                     VStack(spacing: 0) {
                         HStack {
@@ -926,20 +977,34 @@ struct ActivitiesSection: View {
                             Text("Dist").frame(width: 72, alignment: .trailing)
                         }.font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).padding(.bottom, 6)
                         ForEach(data.workouts.prefix(120)) { w in
-                            HStack {
-                                Text(w.day ?? "").frame(width: 96, alignment: .leading).foregroundStyle(.secondary)
-                                Text("\(sportEmoji(w.sport_name)) \((w.sport_name ?? "—").capitalized)").frame(maxWidth: .infinity, alignment: .leading)
-                                Text(one(w.strain)).frame(width: 54, alignment: .trailing).monospacedDigit()
-                                Text(intStr(w.average_heart_rate)).frame(width: 46, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
-                                Text(intStr(w.max_heart_rate)).frame(width: 46, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
-                                Text(w.calories.map { "\(Int($0))" } ?? "—").frame(width: 60, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
-                                Text(w.distance_meter.map { String(format: "%.2f km", $0 / 1000) } ?? "—").frame(width: 72, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
-                            }.font(.system(size: 12.5)).padding(.vertical, 7)
+                            WorkoutTableRow(w: w)
                             Divider().opacity(0.2)
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// One row of the Workouts table, extracted so it can highlight on hover like every Glass/StatTile.
+/// Column widths are byte-identical to the header row so alignment is preserved.
+private struct WorkoutTableRow: View {
+    let w: WorkoutRow
+    @State private var hover = false
+    var body: some View {
+        HStack {
+            Text(w.day ?? "").frame(width: 96, alignment: .leading).foregroundStyle(.secondary)
+            Text("\(sportEmoji(w.sport_name)) \((w.sport_name ?? "—").capitalized)").frame(maxWidth: .infinity, alignment: .leading)
+            Text(one(w.strain)).frame(width: 54, alignment: .trailing).monospacedDigit()
+            Text(intStr(w.average_heart_rate)).frame(width: 46, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
+            Text(intStr(w.max_heart_rate)).frame(width: 46, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
+            Text(w.calories.map { "\(Int($0))" } ?? "—").frame(width: 60, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
+            Text(w.distance_meter.map { String(format: "%.2f km", $0 / 1000) } ?? "—").frame(width: 72, alignment: .trailing).foregroundStyle(.secondary).monospacedDigit()
+        }
+        .font(.system(size: 12.5)).padding(.vertical, 7)
+        .background(Color.white.opacity(hover ? 0.05 : 0))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hover = h } }
     }
 }

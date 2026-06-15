@@ -75,7 +75,7 @@ struct MetricRow: View {
                 .frame(width: 16)
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.62))   // fixed contrast on the near-black gradient
             Spacer(minLength: 6)
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -116,18 +116,20 @@ struct MediumWidgetView: View {
             RecoveryRing(score: snap.recovery?.score, lineWidth: 13, valueFontSize: 34)
                 .frame(width: 118, height: 118)
 
-            VStack(alignment: .leading, spacing: 10) {
-                if let name = snap.name, !name.isEmpty {
-                    Text(name.uppercased())
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(1.5)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("TODAY")
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(1.5)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((snap.name?.isEmpty == false ? snap.name! : "TODAY").uppercased())
+                        .font(.system(size: 11, weight: .heavy)).tracking(1.5)
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    if let s = snap.recovery?.score {
+                        Text("\(zoneName(s)) recovery".uppercased())
+                            .font(.system(size: 11, weight: .heavy)).tracking(1.2)
+                            .foregroundStyle(recoveryColor(s))
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                    }
                 }
+                // Freshness lives on the large widget (which has the room); medium stays compact.
 
                 MetricRow(icon: "waveform.path.ecg", label: "HRV",
                           value: snap.recovery?.hrvMs.map { "\(Int($0.rounded())) ms" } ?? "--",
@@ -148,6 +150,52 @@ struct MediumWidgetView: View {
     }
 }
 
+struct LargeWidgetView: View {
+    let snap: WhoopSnapshot
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((snap.name?.isEmpty == false ? snap.name! : "TODAY").uppercased())
+                        .font(.system(size: 12, weight: .heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.62))
+                    if let s = snap.recovery?.score {
+                        Text("\(zoneName(s)) recovery".uppercased())
+                            .font(.system(size: 12, weight: .heavy)).tracking(1.2).foregroundStyle(recoveryColor(s))
+                    }
+                }
+                Spacer()
+                if let t = freshnessText(snap.lastSync) {
+                    Text(t).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.5))
+                }
+            }
+
+            RecoveryRing(score: snap.recovery?.score, lineWidth: 16, valueFontSize: 52, showCaption: true)
+                .frame(width: 150, height: 150)
+                .frame(maxHeight: .infinity)
+
+            HStack(spacing: 10) {
+                pillar("HRV", snap.recovery?.hrvMs.map { "\(Int($0.rounded()))" } ?? "--", "ms", recoveryColor(snap.recovery?.score))
+                pillar("SLEEP", hm(snap.sleep?.hours), "", WhoopTint.sleep)
+                pillar("STRAIN", strainText(snap.strain), "", WhoopTint.strain)
+            }
+        }
+        .padding(18)
+    }
+
+    private func pillar(_ label: String, _ value: String, _ unit: String, _ tint: Color) -> some View {
+        VStack(spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value).font(.system(size: 18, weight: .bold, design: .rounded)).monospacedDigit()
+                if !unit.isEmpty { Text(unit).font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.6)) }
+            }
+            Text(label).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 12)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
 struct WhoopWidgetView: View {
     var entry: WhoopEntry
     @Environment(\.widgetFamily) var family
@@ -156,6 +204,8 @@ struct WhoopWidgetView: View {
         switch family {
         case .systemSmall:
             SmallWidgetView(snap: entry.snap)
+        case .systemLarge:
+            LargeWidgetView(snap: entry.snap)
         default:
             MediumWidgetView(snap: entry.snap)
         }
@@ -174,11 +224,10 @@ struct WhoopWidget: Widget {
                 WhoopWidgetView(entry: entry)
                     .environment(\.colorScheme, .dark)   // background is always dark → force light text
                     .containerBackground(for: .widget) {
+                        // Anchored to the shared near-black so all three surfaces match, with a
+                        // faint diagonal sheen so it isn't dead flat.
                         LinearGradient(
-                            colors: [
-                                Color(red: 0.09, green: 0.10, blue: 0.13),
-                                Color(red: 0.05, green: 0.05, blue: 0.07)
-                            ],
+                            colors: [Color(red: 0.06, green: 0.06, blue: 0.075), Color.whoopBG],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -190,7 +239,7 @@ struct WhoopWidget: Widget {
         }
         .configurationDisplayName("WHOOP")
         .description("Your latest recovery, sleep, and strain.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
