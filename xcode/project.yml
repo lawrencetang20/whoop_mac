@@ -25,6 +25,7 @@ targets:
       - ../widget/WhoopShared.swift
       - ../widget/WhoopAPI.swift
       - ../widget/WhoopMainView.swift
+      - ../widget/MenuBarPopover.swift
       - ../shortcuts/WhoopIntents.swift
       - Assets.xcassets
     dependencies:
@@ -35,6 +36,9 @@ targets:
       properties:
         CFBundleDisplayName: WHOOP
         LSApplicationCategoryType: public.app-category.healthcare-fitness
+        # Launch as a menu-bar accessory: no Dock icon or window at login. The popover
+        # promotes the app to .regular (Dock icon) on demand when opening the dashboard.
+        LSUIElement: true
         # Lets the menu bar deep-link into the app: whoop://recovery, whoop://sleep, etc.
         CFBundleURLTypes:
           - CFBundleURLName: com.lawrencetang.whoopwidget

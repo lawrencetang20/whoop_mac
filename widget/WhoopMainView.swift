@@ -60,19 +60,28 @@ func fmtHrs(_ h: Double?) -> String {
 }
 func one(_ v: Double?) -> String { v == nil ? "--" : String(format: "%.1f", v!) }
 /// Trims a trailing ".0" for values the API already rounded (matches the web's raw render).
-func trim1(_ v: Double?) -> String { guard let v else { return "--" }; return v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v) }
-func grp(_ v: Double?) -> String { guard let v else { return "--" }; return Int(v).formatted(.number.grouping(.automatic)) }
+func trim1(_ v: Double?) -> String { guard let v, v.isFinite else { return "--" }; return v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v) }
+func grp(_ v: Double?) -> String { guard let v, v.isFinite else { return "--" }; return Int(v).formatted(.number.grouping(.automatic)) }
 func intStr(_ v: Int?, _ suffix: String = "") -> String { v == nil ? "--" : "\(v!)\(suffix)" }
 func zoneName(_ s: Int) -> String { s >= 67 ? "High" : s >= 34 ? "Medium" : "Low" }
 
-func relativeSync(_ iso: String?) -> String {
-    guard let iso else { return "—" }
+/// Parse WHOOP's ISO8601 timestamps (with or without fractional seconds).
+func parseISODate(_ iso: String?) -> Date? {
+    guard let iso else { return nil }
     let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    var date = f.date(from: iso)
-    if date == nil { f.formatOptions = [.withInternetDateTime]; date = f.date(from: iso) }
-    guard let d = date else { return "—" }
+    if let d = f.date(from: iso) { return d }
+    f.formatOptions = [.withInternetDateTime]
+    return f.date(from: iso)
+}
+
+func relativeSync(_ iso: String?) -> String { relativeSync(iso, now: Date()) }
+
+/// Relative-time phrase against an explicit `now`, so a TimelineView can keep it ticking live
+/// (and reflect a fresh last_sync immediately) instead of freezing the bucket it first rendered in.
+func relativeSync(_ iso: String?, now: Date) -> String {
+    guard let d = parseISODate(iso) else { return "—" }
     let rel = RelativeDateTimeFormatter(); rel.unitsStyle = .abbreviated
-    return rel.localizedString(for: d, relativeTo: Date())
+    return rel.localizedString(for: d, relativeTo: now)
 }
 
 func sportEmoji(_ n: String?) -> String {
@@ -439,18 +448,18 @@ struct CalendarHeatmap: View {
 // MARK: - Root
 
 struct WhoopMainView: View {
-    @StateObject private var data = WhoopData()
-    @State private var section: AppSection = .overview
+    @ObservedObject var data: WhoopData
+    @EnvironmentObject private var appState: AppState
     @State private var days = 30
 
     var body: some View {
         NavigationSplitView {
-            List(AppSection.allCases, selection: $section) { s in
+            List(AppSection.allCases, selection: $appState.section) { s in
                 Label {
-                    Text(s.rawValue).font(.system(size: 13.5, weight: section == s ? .semibold : .medium))
+                    Text(s.rawValue).font(.system(size: 13.5, weight: appState.section == s ? .semibold : .medium))
                 } icon: {
                     Image(systemName: s.icon)
-                        .foregroundStyle(section == s ? P.teal : Color.secondary)
+                        .foregroundStyle(appState.section == s ? P.teal : Color.secondary)
                 }.tag(s)
             }
             .tint(P.teal)   // one accent for selection — restraint over a rainbow of colors
@@ -485,7 +494,7 @@ struct WhoopMainView: View {
                         header
                         if let e = data.error { banner(e) }
                         Group {
-                            switch section {
+                            switch appState.section {
                             case .overview: OverviewSection(data: data)
                             case .recovery: RecoverySection(data: data)
                             case .sleep: SleepSection(data: data)
@@ -495,11 +504,12 @@ struct WhoopMainView: View {
                         }
                         .redacted(reason: (data.latest == nil && data.error == nil) ? .placeholder : [])
                         .shimmering(active: data.latest == nil && data.error == nil)
-                        .id(section)
+                        .id(appState.section)
                         .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 12)), removal: .opacity))
                     }
-                    .padding(28).frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.spring(response: 0.42, dampingFraction: 0.86), value: section)
+                    .padding(28).padding(.bottom, 44)   // breathing room so the last row scrolls fully into view
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.spring(response: 0.42, dampingFraction: 0.86), value: appState.section)
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -515,7 +525,7 @@ struct WhoopMainView: View {
         // Deep links from the menu bar: whoop://recovery, whoop://sleep, … open the app here.
         .onOpenURL { url in
             if let s = AppSection(rawValue: (url.host ?? "").capitalized) {
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { section = s }
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { appState.section = s }
             }
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
@@ -523,7 +533,7 @@ struct WhoopMainView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(section.rawValue).font(.system(size: 30, weight: .bold))
+            Text(appState.section.rawValue).font(.system(size: 30, weight: .bold))
             if data.loading { ProgressView().controlSize(.small).padding(.leading, 4) }
             Spacer()
             Picker("", selection: $days) {

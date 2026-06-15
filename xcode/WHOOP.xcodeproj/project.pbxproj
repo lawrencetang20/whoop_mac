@@ -10,6 +10,7 @@
 		01EC7F13A47364A96969F481 /* WhoopAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A3F53BBB58E95211EDDB1C /* WhoopAPI.swift */; };
 		02C31DEBE1ECE0D54A3176E7 /* WhoopWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB13AFBBCB1ED08C4D3205E0 /* WhoopWidget.swift */; };
 		0D91D0C1B590011EA5BAFB7E /* WhoopShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */; };
+		7E80EB70172ED8BADA02DF4B /* MenuBarPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FFF7E5EA0E275F486BDA75C /* MenuBarPopover.swift */; };
 		AB3664FC0011B788BF5B5930 /* WhoopShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */; };
 		C10FDC30FB27C15E479A5A7A /* WhoopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 498A27CB1C6DD72289CF01C8 /* WhoopApp.swift */; };
 		DCB2DB9C3EF1E14AFC592E87 /* WhoopWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C8F00658204C619B5B168B22 /* WhoopWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -43,6 +44,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		3FFF7E5EA0E275F486BDA75C /* MenuBarPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopover.swift; sourceTree = "<group>"; };
 		498A27CB1C6DD72289CF01C8 /* WhoopApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopApp.swift; sourceTree = "<group>"; };
 		66B06FB74C94EBF2A3DE8CA3 /* WhoopWidgetHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhoopWidgetHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopShared.swift; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@
 		2194729E6E746DCF426ADA9D /* widget */ = {
 			isa = PBXGroup;
 			children = (
+				3FFF7E5EA0E275F486BDA75C /* MenuBarPopover.swift */,
 				E8A3F53BBB58E95211EDDB1C /* WhoopAPI.swift */,
 				498A27CB1C6DD72289CF01C8 /* WhoopApp.swift */,
 				E2A030DABBA34C675349736B /* WhoopMainView.swift */,
@@ -198,6 +201,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E80EB70172ED8BADA02DF4B /* MenuBarPopover.swift in Sources */,
 				01EC7F13A47364A96969F481 /* WhoopAPI.swift in Sources */,
 				C10FDC30FB27C15E479A5A7A /* WhoopApp.swift in Sources */,
 				F78D08038E9938F07ED91EB7 /* WhoopIntents.swift in Sources */,

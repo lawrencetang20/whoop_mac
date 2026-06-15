@@ -9,20 +9,64 @@
 
 import SwiftUI
 import WidgetKit
+import AppKit
 
 @main
 struct WhoopApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @StateObject private var data = WhoopData()
+    @StateObject private var appState = AppState()
     @StateObject private var watcher = SnapshotWatcher()
 
     var body: some Scene {
-        WindowGroup {
-            WhoopMainView()
-                .onAppear { watcher.start() }   // keep mirroring data → reload widgets on change
+        // The main dashboard window (opened on demand from the menu-bar popover).
+        // The app launches as a menu-bar accessory (LSUIElement) so no window appears at
+        // login; opening from the popover promotes it to a full windowed app (Dock icon).
+        Window("WHOOP", id: "main") {
+            WhoopMainView(data: data)
+                .environmentObject(appState)
+                .onAppear { watcher.start() }
+                .onDisappear { NSApp.setActivationPolicy(.accessory) }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.automatic)
         .defaultSize(width: 1100, height: 740)
+
+        // The menu-bar item: a recovery badge that drops a custom SwiftUI popover.
+        MenuBarExtra {
+            MenuBarPopover(data: data)
+                .environmentObject(appState)
+        } label: {
+            MenuBarLabel(data: data)
+                // Warm the badge at launch and keep it fresh every 5 min, so the menu-bar
+                // score is real before the popover is ever opened (the engine syncs server-side
+                // on the same cadence). The popover also refetches on each open for immediacy.
+                .task {
+                    while !Task.isCancelled {
+                        await data.load(days: 30)
+                        try? await Task.sleep(nanoseconds: 300 * 1_000_000_000)
+                    }
+                }
+        }
+        .menuBarExtraStyle(.window)
     }
+}
+
+/// Keeps the app alive as a menu-bar accessory: no Dock icon or window at launch, and the
+/// app does not quit when its window closes (the menu bar is the home base).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        // SwiftUI's Window scene may restore/open a window at launch; close it so we start
+        // clean in the menu bar. Windows opened later from the popover are unaffected.
+        DispatchQueue.main.async {
+            for window in NSApp.windows where window.isVisible && window.canBecomeMain {
+                window.close()
+            }
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
 struct ContentView: View {

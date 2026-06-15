@@ -6,6 +6,7 @@ Usage:
   python -m whoop_dashboard sync       # incremental sync (recent window)
   python -m whoop_dashboard backfill   # full history re-sync
   python -m whoop_dashboard dashboard  # run only the web dashboard (no menu bar)
+  python -m whoop_dashboard serve      # headless engine: dashboard/API + auto-sync, no menu bar
   python -m whoop_dashboard status     # print counts + last sync
   python -m whoop_dashboard snapshot   # write the widget JSON snapshot and print it
   python -m whoop_dashboard logout     # forget local tokens
@@ -67,6 +68,29 @@ def cmd_dashboard():
         pass
 
 
+def cmd_serve():
+    """Headless engine: serve the dashboard/API and auto-sync every 5 min, with no menu bar.
+    Used when the native SwiftUI app owns the menu bar (MenuBarExtra popover)."""
+    import time
+    store.init_db()
+    from . import dashboard
+    dashboard.serve_in_thread(on_error=lambda m: print(m, file=sys.stderr))
+    print(f"WHOOP engine serving http://localhost:{config.DASHBOARD_PORT} (headless)")
+
+    def tick():
+        if auth.is_authorized():
+            try:
+                sync.sync()
+                snapshot.write_snapshot()
+            except Exception as e:  # noqa: BLE001
+                print(f"sync error: {e}", file=sys.stderr)
+
+    tick()
+    while True:
+        time.sleep(300)
+        tick()
+
+
 def cmd_status():
     store.init_db()
     print(json.dumps({
@@ -106,6 +130,7 @@ COMMANDS = {
     "sync": cmd_sync,
     "backfill": cmd_backfill,
     "dashboard": cmd_dashboard,
+    "serve": cmd_serve,
     "status": cmd_status,
     "snapshot": cmd_snapshot,
     "build-food-db": cmd_build_food_db,
