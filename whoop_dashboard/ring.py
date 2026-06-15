@@ -19,11 +19,13 @@ def zone_rgb(score):
     return (0.97, 0.44, 0.44)       # red
 
 
-def render_ring(score, path, size: int = 18, line: float = 3.0) -> bool:
-    """Draw the ring to `path` as PNG. Returns True on success, False on any failure."""
+def render_ring(score, path, size: int = 18, line: float = 2.8) -> bool:
+    """Draw a WHOOP-style recovery ring (zone-colored arc with the score in the center) to
+    `path` as a PNG. Returns True on success, False on any failure."""
     try:
-        from AppKit import NSImage, NSBezierPath, NSColor, NSBitmapImageRep
-        from Foundation import NSMakeRect, NSMakePoint, NSMakeSize
+        from AppKit import (NSImage, NSBezierPath, NSColor, NSBitmapImageRep, NSFont,
+                            NSFontAttributeName, NSForegroundColorAttributeName)
+        from Foundation import NSMakeRect, NSMakePoint, NSMakeSize, NSAttributedString
 
         img = NSImage.alloc().initWithSize_(NSMakeSize(size, size))
         img.lockFocus()
@@ -35,7 +37,7 @@ def render_ring(score, path, size: int = 18, line: float = 3.0) -> bool:
             NSMakeRect(cx - radius, cy - radius, radius * 2, radius * 2)
         )
         track.setLineWidth_(line)
-        NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.18).setStroke()
+        NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.22).setStroke()
         track.stroke()
 
         if score and score > 0:
@@ -50,6 +52,19 @@ def render_ring(score, path, size: int = 18, line: float = 3.0) -> bool:
             arc.setLineCapStyle_(1)  # round caps
             NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 1.0).setStroke()
             arc.stroke()
+
+        # Score in the center, in the zone color — a self-contained WHOOP recovery badge.
+        if score is not None:
+            r, g, b = zone_rgb(score)
+            txt = str(int(score))
+            fsize = size * (0.40 if len(txt) < 3 else 0.30)
+            attrs = {
+                NSFontAttributeName: NSFont.systemFontOfSize_weight_(fsize, 0.6),
+                NSForegroundColorAttributeName: NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, b, 1.0),
+            }
+            astr = NSAttributedString.alloc().initWithString_attributes_(txt, attrs)
+            ts = astr.size()
+            astr.drawAtPoint_(NSMakePoint(cx - ts.width / 2.0, cy - ts.height / 2.0 - 0.5))
 
         img.unlockFocus()
 

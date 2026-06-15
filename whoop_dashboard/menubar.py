@@ -298,8 +298,8 @@ class WhoopMenuBar(rumps.App):
 
         score = rec.get("recovery_score")
         if self._render_menu_icon(score):
-            # Native ring icon is showing — keep the text minimal next to it.
-            self.title = f" {score}%" if score is not None else "WHOOP"
+            # The ring badge already shows the score in its center — no text beside it.
+            self.title = "" if score is not None else "WHOOP"
         else:
             self.title = f"{_heart(score)} {score}%" if score is not None else "WHOOP"
 
