@@ -111,26 +111,50 @@ struct WhoopSnapshot: Codable {
     )
 }
 
-// MARK: - App Group loader
+// MARK: - Snapshot loader (API fetch + own-container cache)
+//
+// The widget/app FETCH the snapshot from the local dashboard's /api/snapshot and cache
+// it into THIS target's own App Group container. They never read a file the Python engine
+// writes into our container — the engine doesn't touch our container at all. That removes
+// the cross-app access that made macOS repeatedly prompt "WHOOP would like to access data
+// from other apps" (a grant that can't persist for the engine's py2app Python process).
 
 enum SnapshotStore {
-    /// URL of latest.json inside the shared App Group container, or nil if the
-    /// container can't be resolved (App Group not configured correctly).
-    /// Resolved via FileManager so the Team-ID-prefixed path on Sequoia is correct.
+    // Numeric loopback (not "localhost") so App Transport Security doesn't block the HTTP call.
+    static let apiURL = URL(string: "http://127.0.0.1:8756/api/snapshot")!
+
+    /// URL of the cache file inside our OWN App Group container (we are a group member, so
+    /// reading/writing it is silent — no privacy prompt). Resolved via FileManager so the
+    /// Team-ID-prefixed path on Sequoia is correct.
     static var url: URL? {
         FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: kAppGroupID)?
             .appendingPathComponent(kSnapshotFile)
     }
 
-    /// Loads and decodes the snapshot, falling back to the placeholder if the
-    /// container or file is missing / unreadable / malformed.
+    /// Last cached snapshot from our own container, or the placeholder if missing/unreadable.
     static func load() -> WhoopSnapshot {
         guard let url = url,
               let data = try? Data(contentsOf: url),
               let snap = try? JSONDecoder().decode(WhoopSnapshot.self, from: data)
         else { return .placeholder }
         return snap
+    }
+
+    /// Fetch the latest snapshot from the local engine. On success, cache it into our own
+    /// container and return it; on any failure, return the last cached value (or placeholder).
+    static func fetch(completion: @escaping (WhoopSnapshot) -> Void) {
+        var req = URLRequest(url: apiURL)
+        req.timeoutInterval = 8
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            guard let data = data,
+                  (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let snap = try? JSONDecoder().decode(WhoopSnapshot.self, from: data)
+            else { completion(load()); return }
+            if let url = url { try? data.write(to: url, options: .atomic) }  // own container → silent
+            completion(snap)
+        }.resume()
     }
 }
 

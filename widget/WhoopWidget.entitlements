@@ -4,6 +4,10 @@
 <dict>
     <key>com.apple.security.app-sandbox</key>
     <true/>
+    <!-- Lets the widget fetch /api/snapshot from the local dashboard (127.0.0.1:8756) so it
+         never needs the engine to write into its container (no cross-app privacy prompt). -->
+    <key>com.apple.security.network.client</key>
+    <true/>
     <key>com.apple.security.application-groups</key>
     <array>
         <string>group.com.lawrencetang.whoop</string>

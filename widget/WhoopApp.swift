@@ -86,42 +86,30 @@ struct ContentView: View {
     }
 }
 
-/// Watches the App Group snapshot file and reloads widget timelines on change.
+/// Polls the local engine's API for fresh data and reloads widget timelines on change,
+/// so the widget updates quickly while the app is open. Fetching over the API (rather than
+/// the engine writing into our container) is what keeps macOS from ever showing the
+/// "access data from other apps" prompt.
 final class SnapshotWatcher: ObservableObject {
     @Published var snap: WhoopSnapshot = SnapshotStore.load()
-    private var source: DispatchSourceFileSystemObject?
-    private var fd: Int32 = -1
     private var poll: Timer?
 
     func start() {
         reload()
-        // File-watch the containing directory (the file is replaced atomically,
-        // so the inode changes — watching the directory survives that).
-        guard let dir = SnapshotStore.url?.deletingLastPathComponent() else { return }
-        fd = open(dir.path, O_EVTONLY)
-        if fd >= 0 {
-            let s = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
-            s.setEventHandler { [weak self] in self?.reload() }
-            s.setCancelHandler { [weak self] in
-                if let f = self?.fd, f >= 0 { close(f) }
-            }
-            s.resume()
-            source = s
-        }
-        // Belt-and-suspenders poll every 5 min in case the watch misses an event.
+        // Poll the local API every 5 min (the widget also self-refreshes on its timeline).
         poll = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             self?.reload()
         }
     }
 
     func reload() {
-        snap = SnapshotStore.load()
-        WidgetCenter.shared.reloadAllTimelines()
+        SnapshotStore.fetch { [weak self] snap in
+            DispatchQueue.main.async {
+                self?.snap = snap
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+        }
     }
 
-    deinit {
-        source?.cancel()
-        poll?.invalidate()
-    }
+    deinit { poll?.invalidate() }
 }

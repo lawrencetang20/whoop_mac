@@ -22,16 +22,18 @@ struct WhoopProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WhoopEntry) -> Void) {
-        let snap = context.isPreview ? .placeholder : SnapshotStore.load()
-        completion(WhoopEntry(date: Date(), snap: snap))
+        if context.isPreview { completion(WhoopEntry(date: Date(), snap: .placeholder)); return }
+        SnapshotStore.fetch { snap in completion(WhoopEntry(date: Date(), snap: snap)) }
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WhoopEntry>) -> Void) {
-        let entry = WhoopEntry(date: Date(), snap: SnapshotStore.load())
-        // macOS widgets have no refresh budget, so reload every ~15 min (matches the
-        // menu-bar app's sync cadence). The host app also reloads instantly on file change.
-        let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
-        completion(Timeline(entries: [entry], policy: .after(next)))
+        // Fetch from the local engine's API (not a shared file the engine writes), then
+        // reload every ~15 min to match the menu-bar app's sync cadence.
+        SnapshotStore.fetch { snap in
+            let entry = WhoopEntry(date: Date(), snap: snap)
+            let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
+            completion(Timeline(entries: [entry], policy: .after(next)))
+        }
     }
 }
 

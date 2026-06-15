@@ -150,6 +150,14 @@ def latest():
     return store.latest_stats()
 
 
+@app.get("/api/snapshot")
+def snapshot_json():
+    """Compact widget snapshot (same JSON shape as latest.json). The native widget and
+    app fetch THIS instead of reading a shared App Group file the engine writes into — so
+    the engine never reaches into the widget's container (no macOS privacy prompt)."""
+    return snapshot.build_snapshot()
+
+
 @app.get("/api/summary")
 def summary(days: int = Query(30, ge=1, le=3650)):
     start, end = _range(days)

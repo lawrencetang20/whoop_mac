@@ -1,8 +1,13 @@
 """Write a compact JSON snapshot of the latest stats.
 
-This file is what the phase-2 native WidgetKit widget reads. It's written
-atomically (temp file + os.replace) so a reader never sees a half-written file.
-Set WHOOP_GROUP_SNAPSHOT_PATH to also mirror it into the widget's App Group container.
+Served to the native widget/app via GET /api/snapshot. Also written atomically to the
+app's own data dir (temp file + os.replace) so a reader never sees a half-written file.
+
+NOTE: we deliberately do NOT write into the widget's App Group container. This (non-member,
+py2app/ad-hoc) process reaching into another app's container is what triggered the recurring
+macOS "WHOOP would like to access data from other apps" prompt — and that grant can't persist
+for a Python subprocess. Instead the widget fetches /api/snapshot from the local dashboard, so
+the engine never touches the widget's container.
 """
 
 from __future__ import annotations
@@ -71,26 +76,10 @@ def _write_atomic(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _auto_group_paths() -> list:
-    """Auto-detect the widget's App Group container(s), wherever the Team-ID prefix
-    landed, so the native widget gets data with zero manual path configuration."""
-    import glob
-    base = Path.home() / "Library" / "Group Containers"
-    return [Path(d) / "latest.json"
-            for d in glob.glob(str(base / "*group.com.lawrencetang.whoop"))]
-
-
 def write_snapshot() -> dict:
+    """Write the snapshot to the app's own data dir only. The widget reads it over the
+    API (/api/snapshot), not from a shared container, so the engine never touches the
+    widget's App Group container (see the module docstring)."""
     snap = build_snapshot()
-    text = json.dumps(snap, indent=2)
-    _write_atomic(config.SNAPSHOT_PATH, text)
-    targets = []
-    if config.GROUP_SNAPSHOT_PATH is not None:
-        targets.append(config.GROUP_SNAPSHOT_PATH)
-    targets.extend(_auto_group_paths())  # App Group container, once the widget exists
-    for path in targets:
-        try:
-            _write_atomic(path, text)
-        except OSError:
-            pass
+    _write_atomic(config.SNAPSHOT_PATH, json.dumps(snap, indent=2))
     return snap
