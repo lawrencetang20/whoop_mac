@@ -41,6 +41,16 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .activities: return "figure.run"
         }
     }
+    var accent: Color {
+        switch self {
+        case .overview: return P.teal
+        case .recovery: return P.green
+        case .sleep: return P.blue
+        case .strain: return P.orange
+        case .nutrition: return P.yellow
+        case .activities: return P.violet
+        }
+    }
 }
 
 // MARK: - Formatting
@@ -174,16 +184,22 @@ func computeInsights(_ d: WhoopData) -> [Insight] {
 // MARK: - Building blocks
 
 struct AmbientBackground: View {
+    @State private var drift = false
     var body: some View {
         ZStack {
             P.bg
-            Circle().fill(RadialGradient(colors: [P.teal.opacity(0.16), .clear], center: .center, startRadius: 0, endRadius: 420))
-                .frame(width: 760, height: 760).blur(radius: 40).offset(x: 320, y: -340)
-            Circle().fill(RadialGradient(colors: [P.violet.opacity(0.14), .clear], center: .center, startRadius: 0, endRadius: 420))
-                .frame(width: 720, height: 720).blur(radius: 40).offset(x: -340, y: -300)
-            Circle().fill(RadialGradient(colors: [P.green.opacity(0.08), .clear], center: .center, startRadius: 0, endRadius: 400))
-                .frame(width: 720, height: 720).blur(radius: 50).offset(x: 0, y: 480)
-        }.ignoresSafeArea()
+            blob(P.teal.opacity(0.16),   760, drift ? 300 : 340, drift ? -370 : -320, 40)
+            blob(P.violet.opacity(0.14), 720, drift ? -370 : -320, drift ? -250 : -320, 40)
+            blob(P.green.opacity(0.08),  720, drift ? 36 : -36,    drift ? 500 : 460, 50)
+        }
+        .ignoresSafeArea()
+        // Slow, continuous drift so the backdrop feels alive (great on a demo screen).
+        .onAppear { withAnimation(.easeInOut(duration: 17).repeatForever(autoreverses: true)) { drift = true } }
+    }
+    private func blob(_ c: Color, _ size: CGFloat, _ x: CGFloat, _ y: CGFloat, _ blur: CGFloat) -> some View {
+        Circle()
+            .fill(RadialGradient(colors: [c, .clear], center: .center, startRadius: 0, endRadius: size * 0.55))
+            .frame(width: size, height: size).blur(radius: blur).offset(x: x, y: y)
     }
 }
 
@@ -232,15 +248,19 @@ struct TrendChip: View {
 
 struct StatTile: View {
     let label: String, value: String
+    var accent: Color = P.teal
+    @State private var hover = false
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value).font(.system(size: 23, weight: .bold, design: .rounded)).monospacedDigit()
             Text(label.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(14)
-        .background(Color.white.opacity(0.04))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(P.stroke))
+        .background(Color.white.opacity(hover ? 0.07 : 0.04))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(hover ? accent.opacity(0.45) : P.stroke))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .scaleEffect(hover ? 1.025 : 1)
+        .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
     }
 }
 
@@ -323,7 +343,11 @@ struct WhoopMainView: View {
     var body: some View {
         NavigationSplitView {
             List(AppSection.allCases, selection: $section) { s in
-                Label(s.rawValue, systemImage: s.icon).tag(s).font(.system(size: 14, weight: .semibold))
+                Label {
+                    Text(s.rawValue).font(.system(size: 14, weight: .semibold))
+                } icon: {
+                    Image(systemName: s.icon).foregroundStyle(s.accent)
+                }.tag(s)
             }
             .navigationSplitViewColumnWidth(min: 188, ideal: 200, max: 230)
             .safeAreaInset(edge: .top) {
@@ -366,10 +390,10 @@ struct WhoopMainView: View {
                             }
                         }
                         .id(section)
-                        .transition(.opacity)
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 12)), removal: .opacity))
                     }
                     .padding(28).frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.22), value: section)
+                    .animation(.spring(response: 0.42, dampingFraction: 0.86), value: section)
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -413,31 +437,88 @@ struct WhoopMainView: View {
 
 // MARK: - Overview
 
+func greeting() -> String {
+    let h = Calendar.current.component(.hour, from: Date())
+    return h < 5 ? "Still up" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
+}
+
+func recoveryStatus(_ score: Int?) -> String {
+    guard let s = score else { return "Recovery is still being scored — check back once your sleep is processed." }
+    if s >= 67 { return "You're in the green. Your body is primed — a great day to take on strain." }
+    if s >= 34 { return "Moderately recovered. Train smart and keep an eye on your strain today." }
+    return "Recovery is low. Prioritize rest, hydration, and easy movement today."
+}
+
+/// The Overview centerpiece: a big animated recovery ring + a personal greeting, a
+/// zone-colored status line, the key recovery metrics, and a 30-day sparkline — all on a
+/// glowing, recovery-zone-tinted panel.
+struct HeroCard: View {
+    @ObservedObject var data: WhoopData
+    var body: some View {
+        let rec = data.latest?.recovery
+        let recP = data.latest?.recovery_prev
+        let score = rec?.recovery_score
+        let zone = recoveryColor(score)
+        let name = (data.status?.profile?.first_name).flatMap { $0.isEmpty ? nil : ", \($0)" } ?? ""
+        let delta: Double? = (score != nil && recP?.recovery_score != nil)
+            ? Double(score! - recP!.recovery_score!) : nil
+        HStack(alignment: .center, spacing: 30) {
+            RecoveryRing(score: score, lineWidth: 16, valueFontSize: 54, showCaption: true, animate: true)
+                .frame(width: 184, height: 184)
+            VStack(alignment: .leading, spacing: 13) {
+                HStack(spacing: 10) {
+                    Text("\(greeting())\(name)").font(.system(size: 21, weight: .bold))
+                    TrendChip(delta: delta)
+                    Spacer()
+                }
+                Text(recoveryStatus(score))
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(zone)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 28) {
+                    heroStat("HRV", rec?.hrv_rmssd_milli.map { "\(Int($0.rounded()))" } ?? "--", "ms")
+                    heroStat("Resting HR", intStr(rec?.resting_heart_rate), "bpm")
+                    heroStat("Blood O₂", rec?.spo2_percentage.map { String(format: "%.0f", $0) } ?? "--", "%")
+                    heroStat("Skin temp", rec?.skin_temp_celsius.map { String(format: "%.1f", $0) } ?? "--", "°C")
+                }
+                Sparkline(values: data.recovery.suffix(30).compactMap { $0.recovery_score.map(Double.init) }, color: zone)
+                    .frame(height: 38)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(26)
+        .background(
+            ZStack {
+                LinearGradient(colors: [zone.opacity(0.16), Color.white.opacity(0.02)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Circle().fill(zone.opacity(0.20)).frame(width: 320, height: 320)
+                    .blur(radius: 100).offset(x: -70, y: -110)
+            }
+        )
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(zone.opacity(0.32), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .shadow(color: zone.opacity(0.22), radius: 32, y: 12)
+    }
+    private func heroStat(_ label: String, _ value: String, _ unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value).font(.system(size: 19, weight: .bold, design: .rounded)).monospacedDigit()
+                Text(unit).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+            }
+            Text(label.uppercased()).font(.system(size: 9.5, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct OverviewSection: View {
     @ObservedObject var data: WhoopData
     private let cols = [GridItem(.adaptive(minimum: 150), spacing: 12)]
     var body: some View {
-        let rec = data.latest?.recovery, slp = data.latest?.sleep, str = data.latest?.strain
-        let recP = data.latest?.recovery_prev, slpP = data.latest?.sleep_prev, strP = data.latest?.strain_prev
+        let slp = data.latest?.sleep, str = data.latest?.strain
+        let slpP = data.latest?.sleep_prev, strP = data.latest?.strain_prev
         let sum = data.summary
         VStack(alignment: .leading, spacing: 18) {
+            HeroCard(data: data)
             HStack(alignment: .top, spacing: 18) {
-                Glass(accent: recoveryColor(rec?.recovery_score)) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 18) {
-                            RecoveryRing(score: rec?.recovery_score, lineWidth: 14, valueFontSize: 38).frame(width: 132, height: 132)
-                            VStack(alignment: .leading, spacing: 9) {
-                                HStack { Text("RECOVERY").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
-                                    TrendChip(delta: deltaII(rec?.recovery_score, recP?.recovery_score)) }
-                                kv("HRV", rec?.hrv_rmssd_milli.map { "\(Int($0.rounded())) ms" } ?? "--")
-                                kv("Resting HR", intStr(rec?.resting_heart_rate, " bpm"))
-                                kv("Blood O₂", rec?.spo2_percentage.map { String(format: "%.1f%%", $0) } ?? "--")
-                                kv("Skin temp", rec?.skin_temp_celsius.map { String(format: "%.1f°C", $0) } ?? "--")
-                            }.frame(maxWidth: .infinity)
-                        }
-                        Sparkline(values: data.recovery.suffix(30).compactMap { $0.recovery_score.map(Double.init) }, color: P.green)
-                    }
-                }
                 Glass(accent: P.blue) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text("SLEEP").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)

@@ -223,6 +223,9 @@ struct RecoveryRing: View {
     var valueFontSize: CGFloat = 30
     /// Show the small "RECOVERY" caption under the number.
     var showCaption: Bool = true
+    /// Count the number up on appear (host app only; widgets render statically).
+    var animate: Bool = false
+    @State private var shown: Double = 0
 
     private var fraction: CGFloat {
         guard let s = score else { return 0 }
@@ -251,9 +254,17 @@ struct RecoveryRing: View {
             // Center label
             VStack(spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(score.map(String.init) ?? "--")
-                        .font(.system(size: valueFontSize, weight: .bold, design: .rounded))
-                        .foregroundStyle(color)
+                    if animate, let s = score {
+                        CountingNumber(value: shown)
+                            .font(.system(size: valueFontSize, weight: .bold, design: .rounded))
+                            .foregroundStyle(color)
+                            .onAppear { shown = 0; withAnimation(.easeOut(duration: 1.05)) { shown = Double(s) } }
+                            .onChange(of: s) { _, n in withAnimation(.easeOut(duration: 0.7)) { shown = Double(n) } }
+                    } else {
+                        Text(score.map(String.init) ?? "--")
+                            .font(.system(size: valueFontSize, weight: .bold, design: .rounded))
+                            .foregroundStyle(color)
+                    }
                     if score != nil {
                         Text("%")
                             .font(.system(size: valueFontSize * 0.45, weight: .bold, design: .rounded))
@@ -270,5 +281,18 @@ struct RecoveryRing: View {
                 }
             }
         }
+    }
+}
+
+/// A Text whose integer value animates (counts up) when changed inside `withAnimation`.
+/// Conforms to Animatable so SwiftUI interpolates the value frame-by-frame.
+struct CountingNumber: View, Animatable {
+    var value: Double
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+    var body: some View {
+        Text("\(Int(value.rounded()))").monospacedDigit()
     }
 }
