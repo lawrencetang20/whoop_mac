@@ -21,7 +21,6 @@
       <a class="tab" data-tab="recovery" href="#recovery">Recovery</a>
       <a class="tab" data-tab="sleep" href="#sleep">Sleep</a>
       <a class="tab" data-tab="strain" href="#strain">Strain</a>
-      <a class="tab" data-tab="nutrition" href="#nutrition">Nutrition</a>
       <a class="tab" data-tab="activities" href="#activities">Activities</a>
     </nav>
     <div class="actions">
@@ -96,74 +95,6 @@
       <div class="grid">
         <div class="panel wide"><h3>Day strain</h3><div class="chart"><canvas id="chart-strain"></canvas></div></div>
         <div class="panel wide"><h3>Calories burned</h3><div class="chart"><canvas id="chart-cal"></canvas></div></div>
-      </div>
-    </section>
-
-    <!-- NUTRITION -->
-    <section class="section" id="nutrition">
-      <div class="hero nutri-hero">
-        <div class="card">
-          <div class="card-top"><span class="card-label">Eaten today</span><span class="chip" id="nutri-goal-chip"></span></div>
-          <div class="big" id="nutri-in">--</div>
-          <div class="meter goal-meter"><span id="nutri-goal-bar"></span></div>
-          <div class="card-sub" id="nutri-remaining"></div>
-          <div class="card-sub" id="nutri-macros">P -- · C -- · F --</div>
-        </div>
-        <div class="card">
-          <div class="card-top"><span class="card-label">Burned today</span></div>
-          <div class="big" id="nutri-out">--</div>
-          <div class="card-sub">WHOOP energy out</div>
-        </div>
-        <div class="card">
-          <div class="card-top"><span class="card-label">Net</span></div>
-          <div class="big" id="nutri-net">--</div>
-          <div class="card-sub">intake − burned</div>
-        </div>
-      </div>
-
-      <div class="grid">
-        <div class="panel">
-          <h3>Log food</h3>
-          <form id="goal-form" class="goal-form">
-            <label for="goal-input">Daily goal</label>
-            <input id="goal-input" type="number" min="0" step="10" placeholder="e.g. 2200">
-            <span class="muted">cal</span>
-            <button type="submit">Set</button>
-          </form>
-          <form id="food-search" class="food-form hidden">
-            <input id="food-sq" type="text" autocomplete="off" aria-label="Search foods"
-                   placeholder="Search foods (e.g. chicken breast)">
-            <button type="submit" id="food-search-btn">Search</button>
-          </form>
-          <div id="food-results" class="food-preview hidden"></div>
-          <form id="food-nl" class="food-form">
-            <input id="food-q" type="text" autocomplete="off" aria-label="Describe what you ate"
-                   placeholder="e.g. 2 eggs and a slice of toast">
-            <button type="submit" id="food-lookup-btn">Look up</button>
-          </form>
-          <div id="food-preview" class="food-preview hidden"></div>
-          <details id="food-manual" class="food-manual">
-            <summary>Enter manually</summary>
-            <form id="food-manual-form" class="food-grid">
-              <input id="m-name" type="text" placeholder="Food name" aria-label="Food name" required>
-              <input id="m-cal" type="number" placeholder="Calories" aria-label="Calories" min="0" step="1">
-              <input id="m-p" type="number" placeholder="Protein g" aria-label="Protein (grams)" min="0" step="0.1">
-              <input id="m-c" type="number" placeholder="Carbs g" aria-label="Carbs (grams)" min="0" step="0.1">
-              <input id="m-f" type="number" placeholder="Fat g" aria-label="Fat (grams)" min="0" step="0.1">
-              <button type="submit">Add</button>
-            </form>
-          </details>
-          <div id="food-msg" class="food-msg"></div>
-        </div>
-        <div class="panel">
-          <h3>Today’s food</h3>
-          <ul id="food-list" class="food-list"></ul>
-        </div>
-      </div>
-
-      <div class="grid">
-        <div class="panel wide"><h3>Energy balance (in vs out)</h3><div class="chart"><canvas id="chart-energy"></canvas></div></div>
-        <div class="panel wide"><h3>Calories eaten</h3><div class="chart"><canvas id="chart-intake"></canvas></div></div>
       </div>
     </section>
 

@@ -159,14 +159,6 @@ class WhoopMenuBar(rumps.App):
             self.mi_strain.add(it)
         self.mi_strain.add(rumps.MenuItem("Open Strain view →", callback=self.on_strain))
 
-        # Nutrition sub-section (calories you eat; pairs with Strain's calories out).
-        self.mi_nutrition = rumps.MenuItem("Nutrition")
-        self.mi_nutri_macros = rumps.MenuItem("Macros", callback=self.on_nutrition)
-        self.mi_nutri_net = rumps.MenuItem("Net", callback=self.on_nutrition)
-        for it in (self.mi_nutri_macros, self.mi_nutri_net):
-            self.mi_nutrition.add(it)
-        self.mi_nutrition.add(rumps.MenuItem("Log food / open Nutrition →", callback=self.on_nutrition))
-
         # Activities sub-section (submenu rebuilt when the day's workouts change).
         # Seed one child so the underlying NSMenu exists before the first clear().
         self.mi_activities = rumps.MenuItem("Activities")
@@ -182,7 +174,7 @@ class WhoopMenuBar(rumps.App):
         self.menu = [
             self.mi_header,
             None,
-            self.mi_rec, self.mi_sleep, self.mi_strain, self.mi_nutrition, self.mi_activities,
+            self.mi_rec, self.mi_sleep, self.mi_strain, self.mi_activities,
             None,
             self.mi_dashboard, self.mi_sync, self.mi_notify,
             None,
@@ -345,26 +337,6 @@ class WhoopMenuBar(rumps.App):
                                    f"max {_n(strn.get('max_heart_rate'))} bpm")
         self.mi_strain_cal.title = f"Calories   {_cal(strn.get('calories'))}"
 
-        # Nutrition (today's intake — read directly; it's a fast local query).
-        food = store.food_summary()
-        intake = food.get("calories")
-        goal, remaining = food.get("goal"), food.get("remaining")
-        if goal is not None:
-            self.mi_nutrition.title = f"🍽️ Nutrition   {_cal(intake or 0)} / {_cal(goal)} cal"
-        elif intake is not None:
-            self.mi_nutrition.title = f"🍽️ Nutrition   {_cal(intake)} cal"
-        else:
-            self.mi_nutrition.title = "🍽️ Nutrition   none yet"
-        self.mi_nutri_macros.title = (f"Protein {_n(food.get('protein_g'))}g · "
-                                      f"Carbs {_n(food.get('carbs_g'))}g · Fat {_n(food.get('fat_g'))}g")
-        if remaining is not None:
-            self.mi_nutri_net.title = (f"{int(remaining):,} cal left of {_cal(goal)} goal"
-                                       if remaining >= 0 else f"{int(-remaining):,} cal over {_cal(goal)} goal")
-        else:
-            net = food.get("net")
-            self.mi_nutri_net.title = (f"Net   {int(net):+,} cal  (burned {_cal(food.get('burned'))})"
-                                       if net is not None else "Net   -- (no burn data yet)")
-
         # Activities (workouts on the displayed day) — rebuild submenu on change.
         acts = latest.get("day_workouts") or []
         self.mi_activities.title = (f"🏃 Activities   ({len(acts)})" if acts
@@ -420,9 +392,6 @@ class WhoopMenuBar(rumps.App):
 
     def on_strain(self, _):
         self._open("strain")
-
-    def on_nutrition(self, _):
-        self._open("nutrition")
 
     def on_activities(self, _):
         self._open("activities")

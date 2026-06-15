@@ -101,10 +101,6 @@ struct SmallWidgetView: View {
                 MetricChip(icon: "bolt.fill",
                            value: strainText(snap.strain),
                            tint: WhoopTint.strain)
-                Spacer()
-                MetricChip(icon: "fork.knife",
-                           value: kcal(snap.nutrition?.calories),
-                           tint: WhoopTint.food)
             }
             .padding(.top, 4)
         }
@@ -145,9 +141,6 @@ struct MediumWidgetView: View {
                 MetricRow(icon: "bolt.fill", label: "Strain",
                           value: strainText(snap.strain),
                           tint: WhoopTint.strain)
-                MetricRow(icon: "fork.knife", label: "Eaten",
-                          value: fuelText(snap.nutrition),
-                          tint: WhoopTint.food)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
