@@ -14,6 +14,7 @@ fast main-thread UI timer reflects those into the menu.
 from __future__ import annotations
 
 import fcntl
+import subprocess
 import threading
 import webbrowser
 from datetime import datetime
@@ -164,7 +165,8 @@ class WhoopMenuBar(rumps.App):
         self.mi_activities = rumps.MenuItem("Activities")
         self.mi_activities.add(rumps.MenuItem("Loading…", callback=self._noop))
 
-        self.mi_dashboard = rumps.MenuItem("Open Full Dashboard", callback=self.on_overview)
+        self.mi_dashboard = rumps.MenuItem("Open WHOOP App", callback=self.on_overview)
+        self.mi_web = rumps.MenuItem("Open web dashboard", callback=self._open_web)
         self.mi_sync = rumps.MenuItem("Sync now", callback=self.on_sync)
         self.mi_notify = rumps.MenuItem("Daily notification", callback=self.on_toggle_notify)
         self.mi_status = rumps.MenuItem("Starting…", callback=self._noop)
@@ -176,7 +178,7 @@ class WhoopMenuBar(rumps.App):
             None,
             self.mi_rec, self.mi_sleep, self.mi_strain, self.mi_activities,
             None,
-            self.mi_dashboard, self.mi_sync, self.mi_notify,
+            self.mi_dashboard, self.mi_web, self.mi_sync, self.mi_notify,
             None,
             self.mi_status, self.mi_connect, self.mi_disconnect,
             rumps.MenuItem("Quit", callback=rumps.quit_application),
@@ -396,10 +398,17 @@ class WhoopMenuBar(rumps.App):
         pass
 
     def _open(self, anchor=""):
-        url = f"http://localhost:{config.DASHBOARD_PORT}/"
-        if anchor:
-            url += f"#{anchor}"
-        webbrowser.open(url)
+        """Open the native WHOOP app, deep-linked to the section (whoop://recovery, …).
+        Falls back to the web dashboard if the app/scheme isn't available."""
+        section = anchor or "overview"
+        try:
+            subprocess.Popen(["open", f"whoop://{section}"])
+        except Exception:
+            webbrowser.open(f"http://localhost:{config.DASHBOARD_PORT}/#{anchor}" if anchor
+                            else f"http://localhost:{config.DASHBOARD_PORT}/")
+
+    def _open_web(self, _=None):
+        webbrowser.open(f"http://localhost:{config.DASHBOARD_PORT}/")
 
     def on_overview(self, _):
         self._open("")

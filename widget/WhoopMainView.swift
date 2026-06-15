@@ -5,6 +5,7 @@
 import SwiftUI
 import Charts
 import Combine
+import AppKit
 
 // MARK: - Palette
 
@@ -510,6 +511,13 @@ struct WhoopMainView: View {
         // Auto-refresh every 60s so the app stays current with the menu-bar app's syncs.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             if !data.loading { Task { await data.load(days: days) } }
+        }
+        // Deep links from the menu bar: whoop://recovery, whoop://sleep, … open the app here.
+        .onOpenURL { url in
+            if let s = AppSection(rawValue: (url.host ?? "").capitalized) {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { section = s }
+            }
+            NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }
 

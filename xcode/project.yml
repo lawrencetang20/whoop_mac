@@ -30,14 +30,21 @@ targets:
     dependencies:
       - target: WhoopWidget
         embed: true
+    info:
+      path: GeneratedInfo/WhoopApp-Info.plist
+      properties:
+        CFBundleDisplayName: WHOOP
+        LSApplicationCategoryType: public.app-category.healthcare-fitness
+        # Lets the menu bar deep-link into the app: whoop://recovery, whoop://sleep, etc.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.lawrencetang.whoopwidget
+            CFBundleURLSchemes: [whoop]
     settings:
       base:
         PRODUCT_NAME: "WHOOP Widget"
         PRODUCT_BUNDLE_IDENTIFIER: com.lawrencetang.whoopwidget
         CODE_SIGN_ENTITLEMENTS: ../widget/WhoopApp.entitlements
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: "WHOOP"
-        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.healthcare-fitness"
+        GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
 
