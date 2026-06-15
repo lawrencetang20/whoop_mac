@@ -94,6 +94,13 @@ def cmd_menubar():
     main()
 
 
+def cmd_build_food_db():
+    from . import fooddb
+    store.init_db()
+    n = fooddb.build(progress=lambda m: print(" ", m))
+    print(f"Done — {n:,} common foods in the local database. Search works offline now.")
+
+
 COMMANDS = {
     "connect": cmd_connect,
     "sync": cmd_sync,
@@ -101,6 +108,7 @@ COMMANDS = {
     "dashboard": cmd_dashboard,
     "status": cmd_status,
     "snapshot": cmd_snapshot,
+    "build-food-db": cmd_build_food_db,
     "logout": cmd_logout,
     "menubar": cmd_menubar,
     "run": cmd_menubar,

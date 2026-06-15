@@ -118,6 +118,7 @@ python -m whoop_dashboard backfill     # re-pull full history
 python -m whoop_dashboard dashboard    # run only the web dashboard
 python -m whoop_dashboard status       # counts + last sync (JSON)
 python -m whoop_dashboard snapshot     # write the widget JSON snapshot
+python -m whoop_dashboard build-food-db # download the offline common-foods DB (USDA, ~6 MB)
 python -m whoop_dashboard logout       # forget local tokens
 ```
 
@@ -125,20 +126,23 @@ python -m whoop_dashboard logout       # forget local tokens
 
 ## Nutrition — track what you eat
 
-The **Nutrition** tab adds *calories in* to complement WHOOP's *calories out*, so you get a
-real energy-balance picture.
+The **Nutrition** tab (in the dashboard *and* the native app) adds *calories in* to complement
+WHOOP's *calories out*, so you get a real energy-balance picture. Three ways to log:
 
-- **Log food in plain English** — type *"2 eggs and a slice of toast"* and it fills in
-  calories + protein/carbs/fat for you. This uses the free [Nutritionix](https://www.nutritionix.com/business/api)
-  API. Get an `app_id`/`app_key`, add them to `.env` (`NUTRITIONIX_APP_ID`, `NUTRITIONIX_APP_KEY`).
-- **No key? Manual entry still works** — enter a name + calories (+ optional macros).
+- **Search the offline food database (no key needed)** — run `python -m whoop_dashboard build-food-db`
+  once to download ~7,800 common foods from [USDA FoodData Central](https://fdc.nal.usda.gov/)
+  (public domain, ~6 MB, stored locally). Then search *"chicken breast"*, pick it, set the grams,
+  and calories + macros are computed for you. Fully offline.
+- **Log in plain English (optional)** — with a free [Nutritionix](https://www.nutritionix.com/business/api)
+  key in `.env` (`NUTRITIONIX_APP_ID`/`NUTRITIONIX_APP_KEY`), type *"2 eggs and a slice of toast"*
+  and it parses the items for you.
+- **Manual entry** — enter a name plus **any subset** of calories / protein / carbs / fat. Know
+  only the protein? Log just that.
 - **Energy balance** — a daily *eaten vs burned* chart with the net, plus an intake trend.
-- **Menu bar** — today's intake, macros, and net (intake − WHOOP burn) appear under
-  🍽️ **Nutrition**.
+- **Menu bar** — today's intake, macros, and net (intake − WHOOP burn) appear under 🍽️ **Nutrition**.
 
-Why not the MyFitnessPal API? MFP's API is private (approved partners only, closed to new
-requests), so this uses Nutritionix's open API for the same plain-English logging experience.
-Your food log lives in the same local SQLite database (`food_log` table) — nothing leaves your Mac.
+Everything is local: your food log and the food database live in the same SQLite file
+(`food_log` and `foods` tables) — nothing leaves your Mac.
 
 ## See it on your phone (Tailscale)
 

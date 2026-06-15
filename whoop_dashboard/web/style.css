@@ -200,6 +200,13 @@ input::placeholder { color: var(--muted-2); }
 .pv-item input { accent-color: var(--teal); width: 16px; height: 16px; }
 .pv-name { font-weight: 600; }
 #food-confirm { background: linear-gradient(135deg, var(--orange), #f97316); color: #2a1404; border: none; }
+/* local food-DB search results */
+.fs-list { display: flex; flex-direction: column; gap: 8px; }
+.fs-row { display: flex; align-items: center; gap: 8px; }
+.fs-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+.fs-info .pv-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-g { width: 66px; flex: none; }
+.fs-add { background: linear-gradient(135deg, var(--orange), #f97316); color: #2a1404; border: none; padding: 6px 13px; }
 .food-msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
 .food-msg.ok { color: var(--green); }
 .food-msg.err { color: var(--red); }

@@ -784,126 +784,253 @@ struct NutritionSection: View {
 
 // MARK: - Food logging
 
-/// Log food right inside the app: plain-English lookup (when Nutritionix keys are set),
-/// manual entry, and today's editable log. Mirrors the web dashboard's Nutrition tab.
+/// Log food right inside the app — three ways: search the offline common-foods DB,
+/// plain-English lookup (when Nutritionix keys are set), or manual entry (any subset of
+/// values). Plus today's editable log. Mirrors the web dashboard's Nutrition tab.
 struct FoodLogCard: View {
     @ObservedObject var data: WhoopData
     var days: Int
 
-    @State private var query = ""
-    @State private var preview: [FoodItem] = []
-    @State private var selected: Set<String> = []
+    enum Mode: String, CaseIterable { case search = "Search", describe = "Describe", manual = "Manual" }
+    @State private var mode: Mode = .search
     @State private var busy = false
     @State private var msg: String?
     @State private var msgErr = false
-    // manual entry
+    // search (local USDA DB)
+    @State private var sQuery = ""
+    @State private var results: [FoodDBItem] = []
+    @State private var picked: FoodDBItem?
+    @State private var grams = "100"
+    // describe (Nutritionix)
+    @State private var query = ""
+    @State private var preview: [FoodItem] = []
+    @State private var selected: Set<String> = []
+    // manual
     @State private var mName = ""
     @State private var mCal = ""
     @State private var mP = ""
     @State private var mC = ""
     @State private var mF = ""
-    @State private var manualOpen = false
 
-    private var nlConfigured: Bool { data.nutrition?.nutritionix == true }
+    private var dbReady: Bool { (data.nutrition?.foods ?? 0) > 0 }
+    private var nlReady: Bool { data.nutrition?.nutritionix == true }
+    private var modes: [Mode] {
+        var m: [Mode] = []
+        if dbReady { m.append(.search) }
+        if nlReady { m.append(.describe) }
+        m.append(.manual)
+        return m
+    }
+    private var effectiveMode: Mode { modes.contains(mode) ? mode : (modes.first ?? .manual) }
 
     var body: some View {
         Glass(title: "Log food", accent: P.orange) {
             VStack(alignment: .leading, spacing: 12) {
-                // 1) Plain-English lookup (needs Nutritionix keys)
-                if nlConfigured {
-                    HStack(spacing: 8) {
-                        TextField("e.g. 2 eggs and a slice of toast", text: $query)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit { Task { await lookup() } }
-                        Button { Task { await lookup() } } label: {
-                            if busy { ProgressView().controlSize(.small) } else { Text("Look up") }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(busy || query.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
+                if modes.count > 1 {
+                    Picker("", selection: $mode) {
+                        ForEach(modes, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented).labelsHidden()
                 }
-
-                // 2) Parsed-item preview → pick what to add
-                if !preview.isEmpty {
-                    VStack(spacing: 6) {
-                        ForEach(preview) { it in
-                            Button { toggle(it) } label: {
-                                HStack(spacing: 10) {
-                                    Image(systemName: selected.contains(it.id) ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(selected.contains(it.id) ? P.green : Color.secondary)
-                                    Text(it.name).font(.system(size: 13, weight: .semibold))
-                                    if let sv = it.serving, !sv.isEmpty {
-                                        Text(sv).font(.system(size: 11)).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Text("\(grp(it.calories)) cal").font(.system(size: 12)).foregroundStyle(.secondary)
-                                }
-                            }.buttonStyle(.plain)
-                        }
-                        HStack {
-                            Button("Add selected") { Task { await addSelected() } }
-                                .buttonStyle(.borderedProminent).disabled(selected.isEmpty || busy)
-                            Button("Clear") { preview = []; selected = [] }.buttonStyle(.bordered)
-                        }
-                    }
-                }
-
-                // 3) Manual entry (always available, even without keys)
-                DisclosureGroup(isExpanded: $manualOpen) {
-                    VStack(spacing: 8) {
-                        TextField("Food name", text: $mName).textFieldStyle(.roundedBorder)
-                        HStack(spacing: 8) {
-                            numField("Calories", $mCal); numField("Protein g", $mP)
-                            numField("Carbs g", $mC); numField("Fat g", $mF)
-                        }
-                        Button("Add") { Task { await addManual() } }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(busy || mName.trimmingCharacters(in: .whitespaces).isEmpty || Double(mCal) == nil)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }.padding(.top, 6)
-                } label: {
-                    Text(nlConfigured ? "Add manually" : "Add food (manual)")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-                }
-
-                if !nlConfigured {
-                    Text("Tip: add Nutritionix API keys to .env to log food in plain English.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                switch effectiveMode {
+                case .search:   searchView
+                case .describe: describeView
+                case .manual:   manualView
                 }
                 if let msg {
                     Text(msg).font(.system(size: 12, weight: .medium)).foregroundStyle(msgErr ? P.red : P.green)
                 }
+                logList
+            }
+        }
+        .onAppear { if !modes.contains(mode) { mode = modes.first ?? .manual } }
+    }
 
-                // 4) Today's log (delete with the trash button)
-                if let items = data.nutrition?.items, !items.isEmpty {
-                    Divider().overlay(P.stroke)
-                    ForEach(items) { it in
+    // MARK: search
+
+    @ViewBuilder private var searchView: some View {
+        HStack(spacing: 8) {
+            TextField("Search foods (e.g. chicken breast)", text: $sQuery)
+                .textFieldStyle(.roundedBorder).onSubmit { Task { await runSearch() } }
+            Button { Task { await runSearch() } } label: {
+                if busy { ProgressView().controlSize(.small) } else { Text("Search") }
+            }.buttonStyle(.borderedProminent).disabled(busy || sQuery.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        if let f = picked {
+            pickedEditor(f)
+        } else if !results.isEmpty {
+            VStack(spacing: 4) {
+                ForEach(results) { f in
+                    Button { pick(f) } label: {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(it.name).font(.system(size: 13, weight: .semibold))
-                                if let sv = it.serving, !sv.isEmpty {
-                                    Text(sv).font(.system(size: 11)).foregroundStyle(.secondary)
-                                }
+                                Text(f.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                Text("\(grp(f.kcal_100g)) cal / 100g").font(.system(size: 11)).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text("\(grp(it.calories)) cal").font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
-                            Button { if let id = it.dbId { Task { await data.deleteFood(id, days: days) } } } label: {
-                                Image(systemName: "trash").font(.system(size: 12))
-                            }.buttonStyle(.borderless).foregroundStyle(P.red.opacity(0.85))
-                        }
-                        .padding(.vertical, 3)
-                    }
+                            Image(systemName: "plus.circle.fill").foregroundStyle(P.orange)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
             }
         }
     }
 
+    @ViewBuilder private func pickedEditor(_ f: FoodDBItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                Text(f.name).font(.system(size: 13, weight: .bold)).lineLimit(2)
+                Spacer()
+                Button { picked = nil } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                Text("Amount").font(.system(size: 12)).foregroundStyle(.secondary)
+                TextField("grams", text: $grams).textFieldStyle(.roundedBorder).frame(width: 80)
+                Text("g").foregroundStyle(.secondary)
+                if let sv = f.serving_g, sv > 0 {
+                    Button("1 serving · \(Int(sv))g") { grams = String(Int(sv.rounded())) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+                Spacer()
+            }
+            Text(macroLine(f, Double(grams) ?? 0)).font(.system(size: 12)).foregroundStyle(.secondary)
+            Button("Add") { Task { await addPicked() } }
+                .buttonStyle(.borderedProminent).disabled(busy || (Double(grams) ?? 0) <= 0)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+    }
+
+    // MARK: describe (Nutritionix)
+
+    @ViewBuilder private var describeView: some View {
+        HStack(spacing: 8) {
+            TextField("e.g. 2 eggs and a slice of toast", text: $query)
+                .textFieldStyle(.roundedBorder).onSubmit { Task { await lookup() } }
+            Button { Task { await lookup() } } label: {
+                if busy { ProgressView().controlSize(.small) } else { Text("Look up") }
+            }.buttonStyle(.borderedProminent).disabled(busy || query.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        if !preview.isEmpty {
+            VStack(spacing: 6) {
+                ForEach(preview) { it in
+                    Button { toggle(it) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: selected.contains(it.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selected.contains(it.id) ? P.green : Color.secondary)
+                            Text(it.name).font(.system(size: 13, weight: .semibold))
+                            if let sv = it.serving, !sv.isEmpty { Text(sv).font(.system(size: 11)).foregroundStyle(.secondary) }
+                            Spacer()
+                            Text("\(grp(it.calories)) cal").font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                    }.buttonStyle(.plain)
+                }
+                HStack {
+                    Button("Add selected") { Task { await addSelected() } }
+                        .buttonStyle(.borderedProminent).disabled(selected.isEmpty || busy)
+                    Button("Clear") { preview = []; selected = [] }.buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    // MARK: manual (any subset of values)
+
+    @ViewBuilder private var manualView: some View {
+        VStack(spacing: 8) {
+            TextField("Food name", text: $mName).textFieldStyle(.roundedBorder)
+            HStack(spacing: 8) {
+                numField("Calories", $mCal); numField("Protein g", $mP)
+                numField("Carbs g", $mC); numField("Fat g", $mF)
+            }
+            HStack {
+                Button("Add") { Task { await addManual() } }
+                    .buttonStyle(.borderedProminent).disabled(busy || !manualValid)
+                Spacer()
+            }
+            Text("Enter only what you know — e.g. just protein. Calories and each macro are optional.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: today's log
+
+    @ViewBuilder private var logList: some View {
+        if let items = data.nutrition?.items, !items.isEmpty {
+            Divider().overlay(P.stroke)
+            ForEach(items) { it in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(it.name).font(.system(size: 13, weight: .semibold))
+                        if let sv = it.serving, !sv.isEmpty { Text(sv).font(.system(size: 11)).foregroundStyle(.secondary) }
+                    }
+                    Spacer()
+                    Text(macroChips(it)).font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+                    Button { if let id = it.dbId { Task { await data.deleteFood(id, days: days) } } } label: {
+                        Image(systemName: "trash").font(.system(size: 12))
+                    }.buttonStyle(.borderless).foregroundStyle(P.red.opacity(0.85))
+                }
+                .padding(.vertical, 3)
+            }
+        }
+    }
+
+    // MARK: helpers
+
     private func numField(_ ph: String, _ b: Binding<String>) -> some View {
         TextField(ph, text: b).textFieldStyle(.roundedBorder).frame(maxWidth: .infinity)
     }
     private func flash(_ m: String, err: Bool) { msg = m; msgErr = err }
+    private func num(_ s: String) -> Double? { Double(s.trimmingCharacters(in: .whitespaces)) }
     private func toggle(_ it: FoodItem) {
         if selected.contains(it.id) { selected.remove(it.id) } else { selected.insert(it.id) }
+    }
+    private func scaled(_ per100: Double?, _ g: Double) -> Double? {
+        guard let per100 else { return nil }
+        return (per100 * g / 100 * 10).rounded() / 10
+    }
+    private func macroLine(_ f: FoodDBItem, _ g: Double) -> String {
+        func mg(_ v: Double?) -> String { v == nil ? "--" : "\(Int(v!.rounded()))g" }
+        return "\(grp(scaled(f.kcal_100g, g))) cal · P \(mg(scaled(f.protein_100g, g))) · C \(mg(scaled(f.carb_100g, g))) · F \(mg(scaled(f.fat_100g, g)))"
+    }
+    private func macroChips(_ it: FoodItem) -> String {
+        var parts: [String] = []
+        if let c = it.calories { parts.append("\(grp(c)) cal") }
+        if let p = it.protein_g { parts.append("P \(Int(p.rounded()))") }
+        if let c = it.carbs_g { parts.append("C \(Int(c.rounded()))") }
+        if let f = it.fat_g { parts.append("F \(Int(f.rounded()))") }
+        return parts.isEmpty ? "logged" : parts.joined(separator: " · ")
+    }
+    private var manualValid: Bool {
+        !mName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        (num(mCal) != nil || num(mP) != nil || num(mC) != nil || num(mF) != nil)
+    }
+
+    private func runSearch() async {
+        let q = sQuery.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return }
+        busy = true; msg = nil; picked = nil; defer { busy = false }
+        do {
+            results = try await data.searchFoods(q)
+            if results.isEmpty { flash("No matches — try a simpler term, or add manually.", err: true) }
+        } catch { flash(error.localizedDescription, err: true) }
+    }
+    private func pick(_ f: FoodDBItem) {
+        picked = f
+        grams = f.serving_g.map { String(Int($0.rounded())) } ?? "100"
+        msg = nil
+    }
+    private func addPicked() async {
+        guard let f = picked, let g = Double(grams), g > 0 else { return }
+        let item = FoodItem(dbId: nil, name: f.name, serving: "\(Int(g.rounded()))g",
+                            calories: scaled(f.kcal_100g, g), protein_g: scaled(f.protein_100g, g),
+                            carbs_g: scaled(f.carb_100g, g), fat_g: scaled(f.fat_100g, g), source: "usda")
+        busy = true; defer { busy = false }
+        do {
+            try await data.addFood([item], days: days)
+            picked = nil; results = []; sQuery = ""; grams = "100"
+            flash("Added \(f.name).", err: false)
+        } catch { flash(error.localizedDescription, err: true) }
     }
 
     private func lookup() async {
@@ -916,7 +1043,6 @@ struct FoodLogCard: View {
             else { preview = items; selected = Set(items.map(\.id)) }
         } catch { flash(error.localizedDescription, err: true) }
     }
-
     private func addSelected() async {
         let chosen = preview.filter { selected.contains($0.id) }
         guard !chosen.isEmpty else { return }
@@ -927,12 +1053,11 @@ struct FoodLogCard: View {
             flash("Added \(chosen.count) item\(chosen.count == 1 ? "" : "s").", err: false)
         } catch { flash(error.localizedDescription, err: true) }
     }
-
     private func addManual() async {
         let name = mName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty, let cal = Double(mCal) else { flash("Enter a name and calories.", err: true); return }
-        let item = FoodItem(dbId: nil, name: name, serving: nil, calories: cal,
-                            protein_g: Double(mP), carbs_g: Double(mC), fat_g: Double(mF), source: "manual")
+        guard manualValid else { flash("Enter a name and at least one value (calories or a macro).", err: true); return }
+        let item = FoodItem(dbId: nil, name: name, serving: nil, calories: num(mCal),
+                            protein_g: num(mP), carbs_g: num(mC), fat_g: num(mF), source: "manual")
         busy = true; defer { busy = false }
         do {
             try await data.addFood([item], days: days)

@@ -113,11 +113,24 @@ struct FoodItem: Codable, Identifiable, Hashable {
     var id: String { dbId.map(String.init) ?? "tmp:\(name)|\(serving ?? "")|\(calories ?? 0)" }
 }
 
+// A result from the local USDA common-foods DB (macros are per 100 g).
+struct FoodDBItem: Codable, Identifiable {
+    var fdc_id: Int
+    var name: String
+    var kcal_100g: Double?
+    var protein_100g: Double?
+    var carb_100g: Double?
+    var fat_100g: Double?
+    var serving_g: Double?
+    var id: Int { fdc_id }
+}
+
 struct NutritionResponse: Codable {
     var summary: NutritionSummary?
     var items: [FoodItem]?
     var series: [NutritionPoint]?
     var nutritionix: Bool?
+    var foods: Int?            // size of the local common-foods DB (0 = not built yet)
 }
 
 struct EnergyPoint: Codable, Identifiable {
@@ -232,6 +245,14 @@ final class WhoopData: ObservableObject {
         req.httpBody = try JSONEncoder().encode(body)
         let (data, _) = try await URLSession.shared.data(for: req)
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// Search the local USDA common-foods DB (offline, no key). Returns per-100 g items.
+    func searchFoods(_ query: String) async throws -> [FoodDBItem] {
+        struct Res: Decodable { let items: [FoodDBItem]? }
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let r = try await get("/api/food/search?q=\(q)&limit=25", Res.self)
+        return r.items ?? []
     }
 
     /// Parse a plain-English phrase into food items (not yet saved). Throws a friendly

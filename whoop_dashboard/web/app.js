@@ -336,11 +336,12 @@ function renderActivities(sports, workouts) {
 }
 
 // ---- nutrition ------------------------------------------------------------
-const nutriState = { configured: false };
+const nutriState = { configured: false, foods: 0 };
 
 function renderNutrition(nutri) {
   const s = nutri.summary || {};
   nutriState.configured = !!nutri.nutritionix;
+  nutriState.foods = nutri.foods || 0;
   $("nutri-in").textContent = s.calories != null ? Math.round(s.calories).toLocaleString() : "--";
   $("nutri-macros").textContent = `P ${num(s.protein_g)}g · C ${num(s.carbs_g)}g · F ${num(s.fat_g)}g`;
   $("nutri-out").textContent = s.burned != null ? Math.round(s.burned).toLocaleString() : "--";
@@ -382,9 +383,11 @@ function renderNutrition(nutri) {
       </div>
     </li>`).join("") : `<li class="muted">Nothing logged yet today.</li>`;
 
-  // Natural-language box only works with a Nutritionix key; otherwise lead with manual.
+  // Local search when the food DB is built; NL box only with a Nutritionix key;
+  // otherwise lead with manual entry.
+  $("food-search").classList.toggle("hidden", nutriState.foods === 0);
   $("food-nl").classList.toggle("hidden", !nutriState.configured);
-  $("food-manual").open = !nutriState.configured;
+  $("food-manual").open = !nutriState.configured && nutriState.foods === 0;
 
   const ser = nutri.series || [];
   makeChart("chart-intake", {
@@ -449,6 +452,25 @@ function renderPreview(items) {
   box._items = items;
 }
 
+// Local USDA food-DB search results: each row has its own grams field + Add button.
+function renderFoodResults(items) {
+  const box = $("food-results");
+  if (!items.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="fs-list">${items.map((it, i) => `
+    <div class="fs-row" data-i="${i}">
+      <div class="fs-info">
+        <span class="pv-name">${esc(it.name)}</span>
+        <span class="muted">${it.kcal_100g != null ? Math.round(it.kcal_100g) : "--"} cal / 100g</span>
+      </div>
+      <input class="fs-g" type="number" min="1" step="1" aria-label="grams"
+             value="${it.serving_g ? Math.round(it.serving_g) : 100}">
+      <span class="muted">g</span>
+      <button class="fs-add" data-i="${i}">Add</button>
+    </div>`).join("")}</div>`;
+  box._items = items;
+}
+
 // ---- orchestration --------------------------------------------------------
 async function load(auto = false) {
   if (loadInFlight) return;          // never overlap a load with the auto-refresh
@@ -504,6 +526,39 @@ async function postJSON(url, body, method = "POST") {
   return data;
 }
 
+// Local USDA food-DB search → results, each with its own grams + Add.
+$("food-search").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("food-sq").value.trim();
+  if (!q) return;
+  const btn = $("food-search-btn"); btn.disabled = true; btn.textContent = "…";
+  foodMsg("");
+  try {
+    const { items } = await getJSON(`/api/food/search?q=${encodeURIComponent(q)}&limit=20`);
+    if (!items.length) foodMsg("No matches — try a simpler term, or add manually.", true);
+    renderFoodResults(items);
+  } catch (err) { foodMsg(err.message, true); }
+  finally { btn.disabled = false; btn.textContent = "Search"; }
+});
+
+// Add a searched food at the chosen gram amount (scales the per-100 g macros).
+$("food-results").addEventListener("click", async (e) => {
+  const add = e.target.closest(".fs-add");
+  if (!add) return;
+  const box = $("food-results");
+  const it = (box._items || [])[+add.dataset.i];
+  const g = Number(add.closest(".fs-row").querySelector(".fs-g").value) || 0;
+  if (!it || g <= 0) { foodMsg("Enter a gram amount.", true); return; }
+  const s = g / 100, r = (v) => (v == null ? null : Math.round(v * s * 10) / 10);
+  try {
+    await postJSON("/api/food", { name: it.name, serving: `${Math.round(g)}g`, source: "usda",
+      calories: r(it.kcal_100g), protein_g: r(it.protein_100g), carbs_g: r(it.carb_100g), fat_g: r(it.fat_100g) });
+    $("food-sq").value = ""; renderFoodResults([]);
+    foodMsg(`Added ${it.name}.`);
+    reloadNutrition();
+  } catch (err) { foodMsg(err.message, true); }
+});
+
 // Natural-language lookup → preview the parsed items for confirmation.
 $("food-nl").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -557,7 +612,11 @@ $("food-manual-form").addEventListener("submit", async (e) => {
     carbs_g: $("m-c").value === "" ? null : Number($("m-c").value),
     fat_g: $("m-f").value === "" ? null : Number($("m-f").value),
   };
-  if (!item.name) return;
+  if (!item.name) { foodMsg("Enter a food name.", true); return; }
+  // Any subset is fine — log just protein if that's all you know.
+  if (item.calories == null && item.protein_g == null && item.carbs_g == null && item.fat_g == null) {
+    foodMsg("Enter at least one value (calories or a macro).", true); return;
+  }
   try {
     await postJSON("/api/food", item);
     e.target.reset();

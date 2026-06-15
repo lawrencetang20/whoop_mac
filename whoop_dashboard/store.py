@@ -16,6 +16,7 @@ Design notes:
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -159,6 +160,20 @@ def init_db() -> None:
                 raw         TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_food_day ON food_log(local_day);
+
+            -- Local 'common foods' reference DB (USDA SR Legacy), filled by
+            -- `python -m whoop_dashboard build-food-db`. Reference data, not user data:
+            -- a backfill/reset never touches it. All macros are per 100 g.
+            CREATE TABLE IF NOT EXISTS foods (
+                fdc_id        INTEGER PRIMARY KEY,
+                name          TEXT NOT NULL,
+                kcal_100g     REAL,
+                protein_100g  REAL,
+                carb_100g     REAL,
+                fat_100g      REAL,
+                serving_g     REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_foods_name ON foods(name);
             """
         )
         # Lightweight migrations for columns added after the first release.
@@ -804,6 +819,66 @@ def delete_food(food_id: int) -> bool:
     with _conn() as con:
         cur = con.execute("DELETE FROM food_log WHERE id = ?", (food_id,))
         return cur.rowcount > 0
+
+
+def replace_foods(rows) -> None:
+    """Bulk-replace the local common-foods reference table. `rows` are tuples of
+    (fdc_id, name, kcal_100g, protein_100g, carb_100g, fat_100g, serving_g)."""
+    with _conn() as con:
+        con.execute("DELETE FROM foods")
+        con.executemany(
+            "INSERT OR REPLACE INTO foods "
+            "(fdc_id, name, kcal_100g, protein_100g, carb_100g, fat_100g, serving_g) "
+            "VALUES (?,?,?,?,?,?,?)",
+            rows,
+        )
+
+
+def food_db_count() -> int:
+    r = _rows("SELECT COUNT(*) AS n FROM foods")
+    return r[0]["n"] if r else 0
+
+
+_FOOD_WORD = re.compile(r"[a-z0-9']+")
+
+
+def _food_score(name: str, words: list[str]) -> int:
+    """Relevance score for a food name vs. the query words. Whole-word (and simple
+    plural/singular) matches beat prefixes beat bare substrings, with a big boost when
+    the lead word matches — USDA names lead with the main food ('Apples, raw'), so a
+    substring like 'Applebee's' or 'Salmonberries' never outranks the real food."""
+    toks = _FOOD_WORD.findall(name.lower())
+    tokset = set(toks)
+    first = toks[0] if toks else ""
+    score = 0
+    for qw in words:
+        forms = {qw, qw + "s", (qw[:-1] if qw.endswith("s") and len(qw) > 3 else qw)}
+        if tokset & forms:                          # whole-word / plural match
+            score += 100 + (250 if first in forms else 0)
+        elif any(t.startswith(qw) for t in toks):   # prefix of a word
+            score += 12 + (30 if first.startswith(qw) else 0)
+        elif qw in name.lower():                     # weak: bare substring
+            score += 2
+    return score - len(name) // 25                  # nudge toward shorter, generic names
+
+
+def search_foods(query: str, limit: int = 20) -> list[dict]:
+    """Search the local common-foods DB. USDA names are comma-separated descriptors, so
+    we require every query word to appear, then re-rank by `_food_score` in Python."""
+    words = _FOOD_WORD.findall((query or "").lower())
+    if not words:
+        return []
+    where = " AND ".join(["name LIKE ? COLLATE NOCASE"] * len(words))
+    params = [f"%{w}%" for w in words] + [300]  # candidate pool, re-ranked below
+    cands = _rows(
+        f"""
+        SELECT fdc_id, name, kcal_100g, protein_100g, carb_100g, fat_100g, serving_g
+        FROM foods WHERE {where} ORDER BY length(name) ASC LIMIT ?
+        """,
+        tuple(params),
+    )
+    cands.sort(key=lambda r: (-_food_score(r["name"], words), len(r["name"]), r["name"]))
+    return cands[: min(max(limit, 1), 50)]
 
 
 def food_on_day(day: Optional[str] = None) -> list[dict]:
