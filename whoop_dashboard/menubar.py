@@ -276,10 +276,30 @@ class WhoopMenuBar(rumps.App):
         try:
             self.template = False
             self.icon = str(path) if ok else None
+            if ok:
+                self._fix_menu_icon_aspect()
         except Exception:
             ok = False
         self._ring_ok = ok
         return ok
+
+    def _fix_menu_icon_aspect(self):
+        """rumps forces every status icon to a 20×20 square, which squishes our wide
+        ring+score badge. Restore its true aspect ratio (locked to the bar height) and
+        redraw. Best-effort — uses rumps internals, so it fails quietly if they change."""
+        try:
+            img = self._icon_nsimage
+            reps = img.representations() if img is not None else []
+            if not reps:
+                return
+            pw, ph = float(reps[0].pixelsWide()), float(reps[0].pixelsHigh())
+            if ph > 0:
+                h = 18.0
+                img.setSize_((h * pw / ph, h))
+                if getattr(self, "_nsapp", None) is not None:
+                    self._nsapp.setStatusBarIcon()
+        except Exception:
+            pass
 
     def refresh_ui(self, _timer=None):
         connected = auth.is_authorized()
