@@ -33,12 +33,28 @@ fi
 
 EXE="dist/WHOOP.app/Contents/MacOS/WHOOP"
 # On Apple Silicon, strip the x86_64 slice so it always runs natively (never Rosetta,
-# which can't load arm64-only native wheels), then re-sign ad-hoc.
+# which can't load arm64-only native wheels).
 if [[ "$(uname -m)" == "arm64" ]] && lipo "$EXE" -archs 2>/dev/null | grep -q x86_64; then
   lipo "$EXE" -thin arm64 -output "$EXE.tmp" && mv "$EXE.tmp" "$EXE"
-  codesign --force --sign - "$EXE" >/dev/null 2>&1 || true
-  codesign --force --sign - dist/WHOOP.app >/dev/null 2>&1 || true
 fi
+
+# Code-sign with a STABLE identity so macOS can PERSIST privacy ("Allow") decisions. An
+# ad-hoc signature (--sign -) has no stable identity, so TCC can't remember the grant and
+# re-prompts every time — e.g. "WHOOP would like to access data from other apps" when the
+# engine mirrors latest.json into the widget's App Group container. Prefer an Apple
+# Development / Developer ID cert; fall back to ad-hoc if the machine has none.
+# (Deliberately NOT adding the App Group entitlement: without an embedded provisioning
+# profile it makes macOS restrict the app and the local dashboard fails to bind.)
+SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+  | awk '/Apple Development|Developer ID Application/{print $2; exit}')"
+if [[ -n "$SIGN_ID" ]]; then
+  echo "Signing with stable identity: $SIGN_ID"
+else
+  SIGN_ID="-"
+  echo "No Developer identity found — signing ad-hoc (macOS may re-prompt for permissions)."
+fi
+codesign --force --sign "$SIGN_ID" "$EXE" >/dev/null 2>&1 || true
+codesign --force --sign "$SIGN_ID" --identifier com.lawrencetang.whoop dist/WHOOP.app >/dev/null 2>&1 || true
 
 rm -rf "$DEST"
 cp -R dist/WHOOP.app "$DEST"
