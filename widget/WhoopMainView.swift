@@ -203,6 +203,110 @@ struct AmbientBackground: View {
     }
 }
 
+// MARK: - Demo polish (count-up, chart draw-in, shimmer skeleton, celebration)
+
+/// Animates from 0 → value on appear (and on change); shows "--" when nil. Apply .font(...).
+struct CountUp: View {
+    var value: Double?
+    var render: (Double?) -> String
+    @State private var shown: Double = 0
+    var body: some View {
+        CountingNumber(value: value == nil ? 0 : shown,
+                       render: { value == nil ? render(nil) : render($0) })
+            .onAppear { start() }
+            .onChange(of: value) { _, _ in start() }
+    }
+    private func start() {
+        guard let v = value else { return }
+        shown = 0
+        withAnimation(.easeOut(duration: 0.9)) { shown = v }
+    }
+}
+
+/// Sweeps a chart in left-to-right on appear (re-fires when its section re-appears).
+struct DrawInReveal: ViewModifier {
+    @State private var reveal = false
+    func body(content: Content) -> some View {
+        content
+            .mask(alignment: .leading) {
+                GeometryReader { geo in Rectangle().frame(width: reveal ? geo.size.width : 0) }
+            }
+            .onAppear { reveal = false; withAnimation(.easeInOut(duration: 0.85)) { reveal = true } }
+    }
+}
+extension View { func drawIn() -> some View { modifier(DrawInReveal()) } }
+
+/// A shimmering placeholder bar for loading/skeleton states.
+struct Skeleton: View {
+    var width: CGFloat? = nil
+    var height: CGFloat = 14
+    @State private var x: CGFloat = -1.2
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(Color.white.opacity(0.06))
+            .frame(width: width, height: height)
+            .overlay(
+                GeometryReader { geo in
+                    LinearGradient(colors: [.clear, Color.white.opacity(0.16), .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: geo.size.width * 0.5)
+                        .offset(x: x * geo.size.width)
+                }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .onAppear { withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) { x = 1.6 } }
+    }
+}
+
+/// A one-time sparkle burst + a looping glow pulse, shown over the ring when you're green.
+struct GreenCelebration: View {
+    let color: Color
+    @State private var burst = false
+    @State private var pulse = false
+    var body: some View {
+        ZStack {
+            Circle().stroke(color.opacity(0.55), lineWidth: 2)
+                .scaleEffect(pulse ? 1.2 : 0.9).opacity(pulse ? 0 : 0.6)
+            ForEach(0..<12, id: \.self) { i in
+                let a = Double(i) / 12 * 2 * .pi
+                Image(systemName: "sparkle").font(.system(size: 11)).foregroundStyle(color)
+                    .offset(x: burst ? CGFloat(cos(a)) * 104 : 0, y: burst ? CGFloat(sin(a)) * 104 : 0)
+                    .opacity(burst ? 0 : 0.95)
+                    .scaleEffect(burst ? 1.3 : 0.3)
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.2)) { burst = true }
+            withAnimation(.easeInOut(duration: 1.7).repeatForever(autoreverses: false)) { pulse = true }
+        }
+    }
+}
+
+/// Sweeps a light gradient across content — pairs with `.redacted(.placeholder)` for a
+/// shimmering skeleton while data loads.
+struct Shimmer: ViewModifier {
+    var active: Bool
+    @State private var phase: CGFloat = -1.2
+    func body(content: Content) -> some View {
+        if active {
+            content.overlay(
+                GeometryReader { geo in
+                    LinearGradient(colors: [.clear, .white.opacity(0.12), .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: geo.size.width * 0.6)
+                        .offset(x: phase * geo.size.width)
+                        .blendMode(.plusLighter)
+                }.allowsHitTesting(false)
+            )
+            .onAppear { withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) { phase = 1.7 } }
+        } else {
+            content
+        }
+    }
+}
+extension View { func shimmering(active: Bool) -> some View { modifier(Shimmer(active: active)) } }
+
 struct Glass<Content: View>: View {
     var title: String? = nil
     var accent: Color? = nil
@@ -389,6 +493,8 @@ struct WhoopMainView: View {
                             case .activities: ActivitiesSection(data: data)
                             }
                         }
+                        .redacted(reason: (data.latest == nil && data.error == nil) ? .placeholder : [])
+                        .shimmering(active: data.latest == nil && data.error == nil)
                         .id(section)
                         .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 12)), removal: .opacity))
                     }
@@ -406,6 +512,20 @@ struct WhoopMainView: View {
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             if !data.loading { Task { await data.load(days: days) } }
         }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("", selection: $days) {
+                    Text("7D").tag(7); Text("30D").tag(30); Text("90D").tag(90)
+                    Text("6M").tag(180); Text("1Y").tag(365); Text("All").tag(1825)
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 320)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { Task { await data.load(days: days) } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }.help("Refresh")
+            }
+        }
     }
 
     private var header: some View {
@@ -413,13 +533,6 @@ struct WhoopMainView: View {
             Text(section.rawValue).font(.system(size: 32, weight: .bold))
             if data.loading { ProgressView().controlSize(.small).padding(.leading, 8) }
             Spacer()
-            Picker("", selection: $days) {
-                Text("7D").tag(7); Text("30D").tag(30); Text("90D").tag(90)
-                Text("6M").tag(180); Text("1Y").tag(365); Text("All").tag(1825)
-            }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 340)
-            Button { Task { await data.load(days: days) } } label: { Image(systemName: "arrow.clockwise") }
-                .buttonStyle(.bordered)
         }
     }
 
@@ -465,6 +578,7 @@ struct HeroCard: View {
         HStack(alignment: .center, spacing: 30) {
             RecoveryRing(score: score, lineWidth: 16, valueFontSize: 54, showCaption: true, animate: true)
                 .frame(width: 184, height: 184)
+                .overlay { if let s = score, s >= 67 { GreenCelebration(color: zone).frame(width: 184, height: 184) } }
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 10) {
                     Text("\(greeting())\(name)").font(.system(size: 21, weight: .bold))
@@ -523,7 +637,7 @@ struct OverviewSection: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text("SLEEP").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
                             TrendChip(delta: deltaD(slp?.hours, slpP?.hours).map { $0 * 60 }, unit: "m") }
-                        Text(fmtHrs(slp?.hours)).font(.system(size: 33, weight: .bold)).monospacedDigit()
+                        CountUp(value: slp?.hours, render: fmtHrs).font(.system(size: 33, weight: .bold))
                         kv("Performance", slp?.performance.map { "\(Int($0.rounded()))%" } ?? "--")
                         kv("Efficiency", slp?.efficiency.map { "\(Int($0.rounded()))%" } ?? "--")
                         kv("Sleep need", fmtHrs(slp?.need_hours))
@@ -534,7 +648,7 @@ struct OverviewSection: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack { Text("DAY STRAIN").font(.system(size: 11, weight: .heavy)).foregroundStyle(.secondary)
                             TrendChip(delta: deltaD(str?.strain, strP?.strain), decimals: 1) }
-                        Text(one(str?.strain)).font(.system(size: 33, weight: .bold)).monospacedDigit()
+                        CountUp(value: str?.strain, render: one).font(.system(size: 33, weight: .bold))
                         kv("Avg HR", intStr(str?.average_heart_rate, " bpm"))
                         kv("Max HR", intStr(str?.max_heart_rate, " bpm"))
                         kv("Calories", grp(str?.calories))
@@ -603,7 +717,7 @@ struct RecoverySection: View {
                             .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v)%") }
                     }
                 }
-                .chartYScale(domain: 0...100).chartXSelection(value: $sel).timeAxis().frame(height: 230)
+                .chartYScale(domain: 0...100).chartXSelection(value: $sel).timeAxis().frame(height: 230).drawIn()
             }
             HStack(spacing: 18) {
                 Glass(title: "HRV (ms)", accent: P.teal) {
@@ -669,7 +783,7 @@ struct SleepSection: View {
                     }
                 }
                 .chartForegroundStyleScale(domain: ["Deep", "REM", "Light", "Awake"], range: stageColors)
-                .chartXSelection(value: $sel).timeAxis().frame(height: 230)
+                .chartXSelection(value: $sel).timeAxis().frame(height: 230).drawIn()
             }
             HStack(spacing: 18) {
                 Glass(title: "Performance & efficiency (%)", accent: P.green) {
@@ -743,7 +857,7 @@ struct StrainSection: View {
                         RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
                             .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, one(v)) }
                     }
-                }.chartYScale(domain: 0...21).chartXSelection(value: $sel).timeAxis().frame(height: 230)
+                }.chartYScale(domain: 0...21).chartXSelection(value: $sel).timeAxis().frame(height: 230).drawIn()
             }
             Glass(title: "Calories burned", accent: P.orange) {
                 Chart {
@@ -839,7 +953,7 @@ struct NutritionSection: View {
                         }
                     }
                     .chartForegroundStyleScale(["Eaten": P.orange, "Burned": P.teal])
-                    .timeAxis().frame(height: 220)
+                    .timeAxis().frame(height: 220).drawIn()
                 } else { emptyHint }
             }
 

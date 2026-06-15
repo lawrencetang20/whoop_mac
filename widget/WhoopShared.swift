@@ -284,15 +284,16 @@ struct RecoveryRing: View {
     }
 }
 
-/// A Text whose integer value animates (counts up) when changed inside `withAnimation`.
-/// Conforms to Animatable so SwiftUI interpolates the value frame-by-frame.
+/// A Text whose value animates (counts up) when changed inside `withAnimation`. Conforms to
+/// Animatable so SwiftUI interpolates frame-by-frame; `render` formats the current value.
 struct CountingNumber: View, Animatable {
     var value: Double
+    var render: (Double) -> String = { "\(Int($0.rounded()))" }
     var animatableData: Double {
         get { value }
         set { value = newValue }
     }
     var body: some View {
-        Text("\(Int(value.rounded()))").monospacedDigit()
+        Text(render(value)).monospacedDigit()
     }
 }
