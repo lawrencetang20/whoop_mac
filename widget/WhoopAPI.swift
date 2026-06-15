@@ -4,6 +4,7 @@
 // Requires the `com.apple.security.network.client` entitlement.
 
 import Foundation
+import WidgetKit
 
 // Numeric loopback (not "localhost") so App Transport Security doesn't block the HTTP call.
 let kAPIBase = "http://127.0.0.1:8756"
@@ -94,8 +95,27 @@ struct NutritionPoint: Codable, Identifiable {
     var id: String { day }
 }
 
+// A food entry — serves as both a parsed lookup result (no id yet) and a saved log row
+// (has an id). Numeric fields are Double? so they decode whether the API emits 90 or 90.0.
+struct FoodItem: Codable, Identifiable, Hashable {
+    var dbId: Int?
+    var name: String
+    var serving: String?
+    var calories: Double?
+    var protein_g: Double?
+    var carbs_g: Double?
+    var fat_g: Double?
+    var source: String?
+    enum CodingKeys: String, CodingKey {
+        case dbId = "id", name, serving, calories, protein_g, carbs_g, fat_g, source
+    }
+    // Identifiable: saved rows key on the db id; unsaved lookups on their content.
+    var id: String { dbId.map(String.init) ?? "tmp:\(name)|\(serving ?? "")|\(calories ?? 0)" }
+}
+
 struct NutritionResponse: Codable {
     var summary: NutritionSummary?
+    var items: [FoodItem]?
     var series: [NutritionPoint]?
     var nutritionix: Bool?
 }
@@ -194,6 +214,59 @@ final class WhoopData: ObservableObject {
             self.error = "Can't reach the WHOOP service on localhost:8756. Make sure the menu-bar app (WHOOP) is running, then hit refresh."
         }
         loading = false
+    }
+
+    // MARK: - Nutrition logging
+
+    enum FoodError: LocalizedError {
+        case message(String)
+        var errorDescription: String? { if case .message(let m) = self { return m } else { return nil } }
+    }
+
+    private func post<B: Encodable, T: Decodable>(_ path: String, _ body: B, timeout: TimeInterval = 20) async throws -> T {
+        guard let url = URL(string: kAPIBase + path) else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(body)
+        let (data, _) = try await URLSession.shared.data(for: req)
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// Parse a plain-English phrase into food items (not yet saved). Throws a friendly
+    /// message if Nutritionix isn't configured or didn't recognize the food.
+    func lookupFood(_ query: String) async throws -> [FoodItem] {
+        struct Req: Encodable { let query: String }
+        struct Res: Decodable { let items: [FoodItem]?; let error: String? }
+        let r: Res = try await post("/api/food/lookup", Req(query: query))
+        if let e = r.error { throw FoodError.message(e) }
+        return r.items ?? []
+    }
+
+    /// Save one or more food entries, then refresh the nutrition view + widget.
+    func addFood(_ items: [FoodItem], days: Int) async throws {
+        struct Req: Encodable { let items: [FoodItem] }
+        struct Res: Decodable { let saved: [FoodItem]?; let error: String? }
+        let r: Res = try await post("/api/food", Req(items: items))
+        if let e = r.error { throw FoodError.message(e) }
+        await reloadNutrition(days: days)
+    }
+
+    /// Delete a saved entry by id, then refresh.
+    func deleteFood(_ dbId: Int, days: Int) async {
+        if let url = URL(string: kAPIBase + "/api/food/\(dbId)") {
+            var req = URLRequest(url: url); req.httpMethod = "DELETE"; req.timeoutInterval = 10
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        await reloadNutrition(days: days)
+    }
+
+    /// Re-fetch just nutrition + energy after a log change, and nudge the widget.
+    func reloadNutrition(days: Int) async {
+        if let n = try? await get("/api/nutrition?days=\(days)", NutritionResponse.self) { nutrition = n }
+        if let e = try? await get("/api/energy?days=\(days)", [EnergyPoint].self) { energy = e }
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 
