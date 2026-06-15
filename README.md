@@ -81,7 +81,7 @@ database. (Re-runs are safe — it only adds/updates.)
 - A **WHOOP** item appears in your menu bar showing today's recovery.
 - Click a section (Recovery / Sleep / Strain / Activities) to open that dashboard view at
   **http://localhost:8756**, or **Open Full Dashboard**.
-- It re-syncs automatically every 15 minutes, and on demand via **Sync now**.
+- It re-syncs automatically every 5 minutes, and on demand via **Sync now**.
 
 Prefer just the web dashboard, no menu bar? `.venv/bin/python -m whoop_dashboard dashboard`.
 

@@ -179,7 +179,7 @@ class WhoopMenuBar(rumps.App):
 
         self._ui_timer = rumps.Timer(self.refresh_ui, 3)
         self._ui_timer.start()
-        self._sync_timer = rumps.Timer(self.on_sync_timer, 900)
+        self._sync_timer = rumps.Timer(self.on_sync_timer, 300)  # pull from WHOOP every 5 min
         self._sync_timer.start()
         if auth.is_authorized():
             self._spawn(self._initial_sync)

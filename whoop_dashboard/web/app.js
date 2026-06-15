@@ -2,6 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const charts = {};
+let suppressAnim = false;  // true during a silent auto-refresh (skip count-up + chart animation)
+let loadInFlight = false;  // guard against overlapping loads
 
 // ---- helpers --------------------------------------------------------------
 function recoveryColor(s) {
@@ -34,7 +36,11 @@ const SPORT_ICON = (n) => {
   return "💪";
 };
 async function getJSON(u) { const r = await fetch(u); if (!r.ok) throw new Error(`${u} -> ${r.status}`); return r.json(); }
-function makeChart(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart($(id), cfg); }
+function makeChart(id, cfg) {
+  if (suppressAnim) { cfg.options = cfg.options || {}; cfg.options.animation = false; }  // seamless auto-refresh
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id), cfg);
+}
 
 // ---- chart theme ----------------------------------------------------------
 Chart.defaults.color = "#8a8a95";
@@ -84,6 +90,7 @@ function renderStatus(s) {
 // Count-up animation (ease-out cubic).
 function animateCount(el, to, decimals = 0) {
   if (to == null) { el.textContent = "--"; el.dataset.v = "0"; return; }
+  if (suppressAnim) { el.textContent = Number(to).toFixed(decimals); el.dataset.v = to; return; }  // no count-up on auto-refresh
   const from = parseFloat(el.dataset.v || "0") || 0;
   el.dataset.v = to;
   const start = performance.now(), dur = 800;
@@ -443,7 +450,10 @@ function renderPreview(items) {
 }
 
 // ---- orchestration --------------------------------------------------------
-async function load() {
+async function load(auto = false) {
+  if (loadInFlight) return;          // never overlap a load with the auto-refresh
+  loadInFlight = true;
+  suppressAnim = auto;               // silent (no animations) on a background refresh
   const days = $("range").value;
   try {
     const [status, latest, summary, recovery, sleep, strain, workouts, sports, nutri, energy] = await Promise.all([
@@ -463,12 +473,17 @@ async function load() {
     renderEnergy(energy);
     showTab(tabFromHash());
   } catch (e) {
-    $("banner").textContent = "Error loading data: " + e.message;
-    $("banner").classList.remove("hidden");
+    if (!auto) {                     // don't flash an error banner on a silent refresh
+      $("banner").textContent = "Error loading data: " + e.message;
+      $("banner").classList.remove("hidden");
+    }
+  } finally {
+    suppressAnim = false;
+    loadInFlight = false;
   }
 }
 
-$("range").addEventListener("change", load);
+$("range").addEventListener("change", () => load());
 $("sync").addEventListener("click", async () => {
   const b = $("sync"); b.disabled = true; b.textContent = "Syncing…";
   try {
@@ -561,3 +576,14 @@ $("food-list").addEventListener("click", async (e) => {
 
 showTab(tabFromHash());
 load();
+
+// Auto-refresh every 60s so the dashboard stays live without a manual reload (matches the
+// native app). Skips when the tab is hidden, while you're typing into a field, or with a
+// food entry pending — so a background refresh never interrupts what you're doing.
+setInterval(() => {
+  if (document.hidden) return;
+  const el = document.activeElement;
+  if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
+  if (!$("food-preview").classList.contains("hidden")) return;  // a food entry is pending
+  load(true);
+}, 60000);
