@@ -258,27 +258,27 @@ struct Skeleton: View {
     }
 }
 
-/// A one-time sparkle burst + a looping glow pulse, shown over the ring when you're green.
+/// A restrained "you're recovered" moment: two soft ripples expand once on appear, then a
+/// whisper-quiet glow breathes around the ring. No confetti — just a premium beat.
 struct GreenCelebration: View {
     let color: Color
-    @State private var burst = false
+    @State private var ripple = false
     @State private var pulse = false
     var body: some View {
         ZStack {
-            Circle().stroke(color.opacity(0.55), lineWidth: 2)
-                .scaleEffect(pulse ? 1.2 : 0.9).opacity(pulse ? 0 : 0.6)
-            ForEach(0..<12, id: \.self) { i in
-                let a = Double(i) / 12 * 2 * .pi
-                Image(systemName: "sparkle").font(.system(size: 11)).foregroundStyle(color)
-                    .offset(x: burst ? CGFloat(cos(a)) * 104 : 0, y: burst ? CGFloat(sin(a)) * 104 : 0)
-                    .opacity(burst ? 0 : 0.95)
-                    .scaleEffect(burst ? 1.3 : 0.3)
+            ForEach(0..<2, id: \.self) { i in
+                Circle().stroke(color.opacity(0.45), lineWidth: 1.5)
+                    .scaleEffect(ripple ? 1.55 : 0.96)
+                    .opacity(ripple ? 0 : 0.5)
+                    .animation(.easeOut(duration: 1.7).delay(Double(i) * 0.35), value: ripple)
             }
+            Circle().stroke(color.opacity(0.35), lineWidth: 2).blur(radius: 3)
+                .scaleEffect(pulse ? 1.06 : 0.99).opacity(pulse ? 0.15 : 0.5)
         }
         .allowsHitTesting(false)
         .onAppear {
-            withAnimation(.easeOut(duration: 1.2)) { burst = true }
-            withAnimation(.easeInOut(duration: 1.7).repeatForever(autoreverses: false)) { pulse = true }
+            ripple = true
+            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true }
         }
     }
 }
@@ -448,11 +448,13 @@ struct WhoopMainView: View {
         NavigationSplitView {
             List(AppSection.allCases, selection: $section) { s in
                 Label {
-                    Text(s.rawValue).font(.system(size: 14, weight: .semibold))
+                    Text(s.rawValue).font(.system(size: 13.5, weight: section == s ? .semibold : .medium))
                 } icon: {
-                    Image(systemName: s.icon).foregroundStyle(s.accent)
+                    Image(systemName: s.icon)
+                        .foregroundStyle(section == s ? P.teal : Color.secondary)
                 }.tag(s)
             }
+            .tint(P.teal)   // one accent for selection — restraint over a rainbow of colors
             .navigationSplitViewColumnWidth(min: 188, ideal: 200, max: 230)
             .safeAreaInset(edge: .top) {
                 VStack(alignment: .leading, spacing: 2) {

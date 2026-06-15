@@ -96,6 +96,26 @@ def _time(iso):
         return ""
 
 
+def _greeting():
+    h = datetime.now().hour
+    return "Good morning" if h < 12 else "Good afternoon" if h < 18 else "Good evening"
+
+
+def _pretty_day(iso):
+    if not iso:
+        return ""
+    try:
+        return datetime.strptime(iso, "%Y-%m-%d").strftime("%a, %b %-d")  # "Sun, Jun 15"
+    except (ValueError, TypeError):
+        return iso
+
+
+def _zone_word(score):
+    if score is None:
+        return ""
+    return "Green" if score >= 67 else "Yellow" if score >= 34 else "Red"
+
+
 class WhoopMenuBar(rumps.App):
     def __init__(self):
         super().__init__("WHOOP", title="WHOOP", quit_button=None)
@@ -292,7 +312,8 @@ class WhoopMenuBar(rumps.App):
             self.title = f"{_heart(score)} {score}%" if score is not None else "WHOOP"
 
         name = (prof.get("first_name") or "").strip()
-        self.mi_header.title = " · ".join(p for p in (name, day) if p) or "WHOOP"
+        head = f"{_greeting()}, {name}" if name else "WHOOP"
+        self.mi_header.title = "   ·   ".join(p for p in (head, _pretty_day(day)) if p)
 
         # Recovery
         self.mi_rec.title = (f"{_heart(score)} Recovery   {score}%   "
