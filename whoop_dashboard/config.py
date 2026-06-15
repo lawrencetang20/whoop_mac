@@ -85,6 +85,10 @@ except OSError:
     pass
 
 DB_PATH = DATA_DIR / "whoop.sqlite3"
+# Local 'common + branded foods' reference DB (USDA FoodData Central). Kept in its own file
+# because the branded dataset is large (~1 GB); deletable/rebuildable without touching your
+# WHOOP data. Built by `python -m whoop_dashboard build-food-db`.
+FOODS_DB_PATH = DATA_DIR / "foods.sqlite3"
 TOKEN_PATH = DATA_DIR / "tokens.json"
 # Small JSON snapshot of the latest stats, consumed by the native WidgetKit widget.
 SNAPSHOT_PATH = DATA_DIR / "latest.json"

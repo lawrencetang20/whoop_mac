@@ -130,9 +130,11 @@ The **Nutrition** tab (in the dashboard *and* the native app) adds *calories in*
 WHOOP's *calories out*, so you get a real energy-balance picture. Three ways to log:
 
 - **Search the offline food database (no key needed)** — run `python -m whoop_dashboard build-food-db`
-  once to download ~7,800 common foods from [USDA FoodData Central](https://fdc.nal.usda.gov/)
-  (public domain, ~6 MB, stored locally). Then search *"chicken breast"*, pick it, set the grams,
-  and calories + macros are computed for you. Fully offline.
+  once to download [USDA FoodData Central](https://fdc.nal.usda.gov/) (public domain): ~7,800 whole
+  foods **plus ~1.9 million branded grocery products** (Mission, Cheerios, Chobani, …). ~450 MB
+  download, ~270 MB stored locally in `foods.sqlite3` (separate from your WHOOP data). Then search
+  *"mission carb balance tortilla"* or *"chicken breast"*, pick it, set the grams, and calories +
+  macros are computed for you. Fully offline — whole foods rank ahead of branded for generic terms.
 - **Log in plain English (optional)** — with a free [Nutritionix](https://www.nutritionix.com/business/api)
   key in `.env` (`NUTRITIONIX_APP_ID`/`NUTRITIONIX_APP_KEY`), type *"2 eggs and a slice of toast"*
   and it parses the items for you.

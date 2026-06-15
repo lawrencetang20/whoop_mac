@@ -221,9 +221,9 @@ def nutrition(days: int = Query(30, ge=1, le=3650), day: str | None = None):
 
 @app.get("/api/food/search")
 def food_search(q: str = "", limit: int = Query(20, ge=1, le=50)):
-    """Search the local USDA common-foods DB (per-100 g macros). Works offline, no key —
-    empty until built via `python -m whoop_dashboard build-food-db`."""
-    return {"items": store.search_foods(q, limit), "count": store.food_db_count()}
+    """Search the local USDA foods DB — whole + branded grocery products (per-100 g macros).
+    Works offline, no key; empty until built via `python -m whoop_dashboard build-food-db`."""
+    return {"items": store.search_foods((q or "")[:200], limit), "count": store.food_db_count()}
 
 
 @app.get("/api/energy")

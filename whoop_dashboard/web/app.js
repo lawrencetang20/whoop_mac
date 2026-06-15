@@ -461,7 +461,7 @@ function renderFoodResults(items) {
     <div class="fs-row" data-i="${i}">
       <div class="fs-info">
         <span class="pv-name">${esc(it.name)}</span>
-        <span class="muted">${it.kcal_100g != null ? Math.round(it.kcal_100g) : "--"} cal / 100g</span>
+        <span class="muted">${it.brand ? esc(it.brand) + " · " : ""}${it.kcal_100g != null ? Math.round(it.kcal_100g) : "--"} cal / 100g</span>
       </div>
       <input class="fs-g" type="number" min="1" step="1" aria-label="grams"
              value="${it.serving_g ? Math.round(it.serving_g) : 100}">

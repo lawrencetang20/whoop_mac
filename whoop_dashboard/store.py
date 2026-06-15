@@ -160,20 +160,6 @@ def init_db() -> None:
                 raw         TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_food_day ON food_log(local_day);
-
-            -- Local 'common foods' reference DB (USDA SR Legacy), filled by
-            -- `python -m whoop_dashboard build-food-db`. Reference data, not user data:
-            -- a backfill/reset never touches it. All macros are per 100 g.
-            CREATE TABLE IF NOT EXISTS foods (
-                fdc_id        INTEGER PRIMARY KEY,
-                name          TEXT NOT NULL,
-                kcal_100g     REAL,
-                protein_100g  REAL,
-                carb_100g     REAL,
-                fat_100g      REAL,
-                serving_g     REAL
-            );
-            CREATE INDEX IF NOT EXISTS idx_foods_name ON foods(name);
             """
         )
         # Lightweight migrations for columns added after the first release.
@@ -821,64 +807,80 @@ def delete_food(food_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def replace_foods(rows) -> None:
-    """Bulk-replace the local common-foods reference table. `rows` are tuples of
-    (fdc_id, name, kcal_100g, protein_100g, carb_100g, fat_100g, serving_g)."""
-    with _conn() as con:
-        con.execute("DELETE FROM foods")
-        con.executemany(
-            "INSERT OR REPLACE INTO foods "
-            "(fdc_id, name, kcal_100g, protein_100g, carb_100g, fat_100g, serving_g) "
-            "VALUES (?,?,?,?,?,?,?)",
-            rows,
-        )
+def _foods_conn():
+    """Connection to the separate foods.sqlite3 reference DB (whole + branded foods)."""
+    con = sqlite3.connect(config.FOODS_DB_PATH)
+    con.row_factory = sqlite3.Row
+    return con
 
 
 def food_db_count() -> int:
-    r = _rows("SELECT COUNT(*) AS n FROM foods")
-    return r[0]["n"] if r else 0
+    """Number of foods in the local reference DB (0 if it hasn't been built yet)."""
+    try:
+        with _foods_conn() as con:
+            row = con.execute("SELECT COUNT(*) AS n FROM foods").fetchone()
+            return row["n"] if row else 0
+    except sqlite3.OperationalError:
+        return 0
 
 
-_FOOD_WORD = re.compile(r"[a-z0-9']+")
-
-
-def _food_score(name: str, words: list[str]) -> int:
-    """Relevance score for a food name vs. the query words. Whole-word (and simple
-    plural/singular) matches beat prefixes beat bare substrings, with a big boost when
-    the lead word matches — USDA names lead with the main food ('Apples, raw'), so a
-    substring like 'Applebee's' or 'Salmonberries' never outranks the real food."""
-    toks = _FOOD_WORD.findall(name.lower())
-    tokset = set(toks)
-    first = toks[0] if toks else ""
-    score = 0
-    for qw in words:
-        forms = {qw, qw + "s", (qw[:-1] if qw.endswith("s") and len(qw) > 3 else qw)}
-        if tokset & forms:                          # whole-word / plural match
-            score += 100 + (250 if first in forms else 0)
-        elif any(t.startswith(qw) for t in toks):   # prefix of a word
-            score += 12 + (30 if first.startswith(qw) else 0)
-        elif qw in name.lower():                     # weak: bare substring
-            score += 2
-    return score - len(name) // 25                  # nudge toward shorter, generic names
+_FOOD_WORD = re.compile(r"[a-z0-9]+")
 
 
 def search_foods(query: str, limit: int = 20) -> list[dict]:
-    """Search the local common-foods DB. USDA names are comma-separated descriptors, so
-    we require every query word to appear, then re-rank by `_food_score` in Python."""
+    """Full-text search the local foods DB (whole + branded). Each query word becomes a
+    prefix term, AND-combined — so 'mission carb tortilla' finds the Mission Carb Balance
+    tortilla. Ranked by FTS5 bm25 (name weighted above brand). Returns per-100 g macros."""
     words = _FOOD_WORD.findall((query or "").lower())
     if not words:
         return []
-    where = " AND ".join(["name LIKE ? COLLATE NOCASE"] * len(words))
-    params = [f"%{w}%" for w in words] + [300]  # candidate pool, re-ranked below
-    cands = _rows(
-        f"""
-        SELECT fdc_id, name, kcal_100g, protein_100g, carb_100g, fat_100g, serving_g
-        FROM foods WHERE {where} ORDER BY length(name) ASC LIMIT ?
-        """,
-        tuple(params),
-    )
-    cands.sort(key=lambda r: (-_food_score(r["name"], words), len(r["name"]), r["name"]))
-    return cands[: min(max(limit, 1), 50)]
+    match = " ".join(w + "*" for w in words)
+    limit = min(max(limit, 1), 50)
+    try:
+        with _foods_conn() as con:
+            # Curated whole foods (USDA SR Legacy) rank first, so a generic query like
+            # 'apple' returns "Apples, raw" rather than a branded applesauce; brand-specific
+            # queries ('mission carb tortilla') have no whole-food match and surface branded.
+            rows = con.execute(
+                """
+                SELECT f.fdc_id, f.name, f.brand, f.kcal_100g, f.protein_100g,
+                       f.carb_100g, f.fat_100g, f.serving_g, f.serving_text, f.is_whole
+                FROM foods_fts ft JOIN foods f ON f.fdc_id = ft.rowid
+                WHERE foods_fts MATCH ?
+                ORDER BY f.is_whole DESC, bm25(foods_fts, 5.0, 2.0), length(f.name)
+                LIMIT ?
+                """,
+                (match, max(limit * 6, 200)),  # candidate pool floor so re-rank sees the best
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return []  # foods.sqlite3 not built yet
+
+    # Float foods whose LEAD word EXACTLY matches a query word (or its plural) — so 'apple'
+    # gives "Apples, raw" (lead 'apples'), not "Applebee's" or "Eggnog"; and 'oreo' gives the
+    # branded OREO products (lead 'oreo') over an SR-Legacy "McFlurry with Oreo". Then prefer
+    # curated whole foods, then shorter names. sorted() is stable, so SQL bm25 breaks ties.
+    forms = set(words)
+    for w in words:
+        forms.add(w + "s")
+        if w.endswith("s") and len(w) > 3:
+            forms.add(w[:-1])
+
+    def rank(r):
+        toks = _FOOD_WORD.findall((r["name"] or "").lower())
+        lead = 0 if (toks and toks[0] in forms) else 1
+        return (lead, 0 if r["is_whole"] else 1, len(r["name"] or ""))
+
+    out, seen = [], set()
+    for r in sorted(rows, key=rank):
+        key = ((r["name"] or "").lower(), (r["brand"] or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        d = dict(r); d.pop("is_whole", None)
+        out.append(d)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def food_on_day(day: Optional[str] = None) -> list[dict]:

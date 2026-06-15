@@ -113,15 +113,17 @@ struct FoodItem: Codable, Identifiable, Hashable {
     var id: String { dbId.map(String.init) ?? "tmp:\(name)|\(serving ?? "")|\(calories ?? 0)" }
 }
 
-// A result from the local USDA common-foods DB (macros are per 100 g).
+// A result from the local USDA foods DB — whole or branded (macros are per 100 g).
 struct FoodDBItem: Codable, Identifiable {
     var fdc_id: Int
     var name: String
+    var brand: String?
     var kcal_100g: Double?
     var protein_100g: Double?
     var carb_100g: Double?
     var fat_100g: Double?
     var serving_g: Double?
+    var serving_text: String?
     var id: Int { fdc_id }
 }
 

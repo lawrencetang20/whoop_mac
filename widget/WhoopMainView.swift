@@ -864,7 +864,7 @@ struct FoodLogCard: View {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(f.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                                Text("\(grp(f.kcal_100g)) cal / 100g").font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text(brandCal(f)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer()
                             Image(systemName: "plus.circle.fill").foregroundStyle(P.orange)
@@ -992,6 +992,11 @@ struct FoodLogCard: View {
     private func macroLine(_ f: FoodDBItem, _ g: Double) -> String {
         func mg(_ v: Double?) -> String { v == nil ? "--" : "\(Int(v!.rounded()))g" }
         return "\(grp(scaled(f.kcal_100g, g))) cal · P \(mg(scaled(f.protein_100g, g))) · C \(mg(scaled(f.carb_100g, g))) · F \(mg(scaled(f.fat_100g, g)))"
+    }
+    private func brandCal(_ f: FoodDBItem) -> String {
+        let cal = "\(grp(f.kcal_100g)) cal / 100g"
+        if let b = f.brand, !b.isEmpty { return "\(b) · \(cal)" }
+        return cal
     }
     private func macroChips(_ it: FoodItem) -> String {
         var parts: [String] = []
