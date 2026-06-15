@@ -581,12 +581,31 @@ def profile() -> Optional[dict]:
     return rows[0] if rows else None
 
 
+def _strain_for_cycle(cycle_id) -> list:
+    """Day-strain card for a specific cycle id — the one physiologically paired with a
+    recovery. Used instead of a calendar-day match because the current wake-to-wake cycle
+    often starts late the prior evening, so its local_day can trail the recovery's (sleep)
+    day by one; matching by cycle keeps strain in step with the recovery/sleep shown and
+    surfaces today's in-progress strain (including workouts)."""
+    if cycle_id is None:
+        return []
+    return _rows(
+        """
+        SELECT local_day AS day, strain, average_heart_rate, max_heart_rate,
+               ROUND(kilojoule * ?, 0) AS calories
+        FROM cycles
+        WHERE id = ? AND score_state = 'SCORED'
+        """,
+        (KJ_TO_KCAL, cycle_id),
+    )
+
+
 def latest_stats() -> dict:
     """Most recent values for the menu bar + widget snapshot. Fetches the two most
     recent recoveries so callers can show a day-over-day trend."""
     rec = _rows(
         """
-        SELECT COALESCE(s.local_day, c.local_day) AS day, r.recovery_score,
+        SELECT COALESCE(s.local_day, c.local_day) AS day, r.cycle_id AS cycle_id, r.recovery_score,
                r.hrv_rmssd_milli, r.resting_heart_rate, r.spo2_percentage, r.skin_temp_celsius
         FROM recoveries r
         LEFT JOIN sleeps s ON s.id = r.sleep_id
@@ -629,7 +648,9 @@ def latest_stats() -> dict:
         """,
         (ref_day,),
     )
-    strain = _rows(
+    # Pair Day Strain with the recovery's own cycle; fall back to a calendar-day match
+    # only if that recovery has no cycle link (older data).
+    strain = _strain_for_cycle(rec[0]["cycle_id"] if rec else None) or _rows(
         """
         SELECT local_day AS day, strain, average_heart_rate, max_heart_rate,
                ROUND(kilojoule * ?, 0) AS calories
@@ -653,7 +674,9 @@ def latest_stats() -> dict:
         """,
         (ref_day,),
     )
-    strain_prev = _rows(
+    # Previous day's strain = the cycle paired with the previous recovery (rec[1]); fall
+    # back to the most recent cycle strictly before ref_day if that link is missing.
+    strain_prev = _strain_for_cycle(rec[1]["cycle_id"] if len(rec) > 1 else None) or _rows(
         """
         SELECT local_day AS day, strain
         FROM cycles
