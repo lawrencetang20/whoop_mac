@@ -1,0 +1,71 @@
+name: WHOOP
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_EMIT_LOC_STRINGS: YES
+    DEVELOPMENT_TEAM: LSJNBX7SGH   # your Apple ID personal team (cert OU)
+
+targets:
+  # ---- Host app: carries the App Group entitlement, watches latest.json,
+  #      reloads the widget, and hosts the Siri/Shortcuts App Intents. ----
+  WhoopWidgetHost:
+    type: application
+    platform: macOS
+    sources:
+      - ../widget/WhoopApp.swift
+      - ../widget/WhoopShared.swift
+      - ../widget/WhoopAPI.swift
+      - ../widget/WhoopMainView.swift
+      - ../shortcuts/WhoopIntents.swift
+      - Assets.xcassets
+    dependencies:
+      - target: WhoopWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: "WHOOP Widget"
+        PRODUCT_BUNDLE_IDENTIFIER: com.lawrencetang.whoopwidget
+        CODE_SIGN_ENTITLEMENTS: ../widget/WhoopApp.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "WHOOP"
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.healthcare-fitness"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+
+  # ---- Widget extension: the recovery-ring widget. ----
+  WhoopWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - ../widget/WhoopWidget.swift
+      - ../widget/WhoopShared.swift
+    info:
+      path: GeneratedInfo/WhoopWidget-Info.plist
+      properties:
+        CFBundleDisplayName: WHOOP
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_NAME: WhoopWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.lawrencetang.whoopwidget.WhoopWidget
+        CODE_SIGN_ENTITLEMENTS: ../widget/WhoopWidget.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_HARDENED_RUNTIME: YES
+
+schemes:
+  WHOOP Widget:
+    build:
+      targets:
+        WhoopWidgetHost: all
+    run:
+      config: Debug

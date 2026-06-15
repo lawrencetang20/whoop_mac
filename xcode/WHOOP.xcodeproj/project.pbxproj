@@ -1,0 +1,469 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01EC7F13A47364A96969F481 /* WhoopAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A3F53BBB58E95211EDDB1C /* WhoopAPI.swift */; };
+		02C31DEBE1ECE0D54A3176E7 /* WhoopWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB13AFBBCB1ED08C4D3205E0 /* WhoopWidget.swift */; };
+		0D91D0C1B590011EA5BAFB7E /* WhoopShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */; };
+		AB3664FC0011B788BF5B5930 /* WhoopShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */; };
+		C10FDC30FB27C15E479A5A7A /* WhoopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 498A27CB1C6DD72289CF01C8 /* WhoopApp.swift */; };
+		DCB2DB9C3EF1E14AFC592E87 /* WhoopWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C8F00658204C619B5B168B22 /* WhoopWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DF7679B4F6C10DB9D6A52E5B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F94C0421713426C5E3DFF991 /* Assets.xcassets */; };
+		E3E0F7A4164D4EA3639A9AC1 /* WhoopMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A030DABBA34C675349736B /* WhoopMainView.swift */; };
+		F78D08038E9938F07ED91EB7 /* WhoopIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F41195B9D042EE83745745 /* WhoopIntents.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		DD142EA6FEDBAD376E00058C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C3B44322BC48368B96D3861F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 884A1CE4F36ACFC1D1801530;
+			remoteInfo = WhoopWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7048D9A7C5A61727BA942E0E /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				DCB2DB9C3EF1E14AFC592E87 /* WhoopWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		498A27CB1C6DD72289CF01C8 /* WhoopApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopApp.swift; sourceTree = "<group>"; };
+		66B06FB74C94EBF2A3DE8CA3 /* WhoopWidgetHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhoopWidgetHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopShared.swift; sourceTree = "<group>"; };
+		88F41195B9D042EE83745745 /* WhoopIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopIntents.swift; sourceTree = "<group>"; };
+		AB13AFBBCB1ED08C4D3205E0 /* WhoopWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopWidget.swift; sourceTree = "<group>"; };
+		C8F00658204C619B5B168B22 /* WhoopWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhoopWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2A030DABBA34C675349736B /* WhoopMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopMainView.swift; sourceTree = "<group>"; };
+		E8A3F53BBB58E95211EDDB1C /* WhoopAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhoopAPI.swift; sourceTree = "<group>"; };
+		F94C0421713426C5E3DFF991 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		19569F3E799A21B0368D75BE /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C8F00658204C619B5B168B22 /* WhoopWidget.appex */,
+				66B06FB74C94EBF2A3DE8CA3 /* WhoopWidgetHost.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2194729E6E746DCF426ADA9D /* widget */ = {
+			isa = PBXGroup;
+			children = (
+				E8A3F53BBB58E95211EDDB1C /* WhoopAPI.swift */,
+				498A27CB1C6DD72289CF01C8 /* WhoopApp.swift */,
+				E2A030DABBA34C675349736B /* WhoopMainView.swift */,
+				6BDA1E171DD16CBADCDF9AC5 /* WhoopShared.swift */,
+				AB13AFBBCB1ED08C4D3205E0 /* WhoopWidget.swift */,
+			);
+			path = widget;
+			sourceTree = "<group>";
+		};
+		4E1FA224F0299077893323E8 /* whoop */ = {
+			isa = PBXGroup;
+			children = (
+				79B1F3E1EAB74F430BA7B833 /* shortcuts */,
+				2194729E6E746DCF426ADA9D /* widget */,
+			);
+			name = whoop;
+			path = ..;
+			sourceTree = "<group>";
+		};
+		79B1F3E1EAB74F430BA7B833 /* shortcuts */ = {
+			isa = PBXGroup;
+			children = (
+				88F41195B9D042EE83745745 /* WhoopIntents.swift */,
+			);
+			path = shortcuts;
+			sourceTree = "<group>";
+		};
+		D534CB111C4EEEC2822CD9DD = {
+			isa = PBXGroup;
+			children = (
+				4E1FA224F0299077893323E8 /* whoop */,
+				F94C0421713426C5E3DFF991 /* Assets.xcassets */,
+				19569F3E799A21B0368D75BE /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		884A1CE4F36ACFC1D1801530 /* WhoopWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 42E5C52E59487BC0BCC139BE /* Build configuration list for PBXNativeTarget "WhoopWidget" */;
+			buildPhases = (
+				D4D58E58C5D8345B0A8456CE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WhoopWidget;
+			packageProductDependencies = (
+			);
+			productName = WhoopWidget;
+			productReference = C8F00658204C619B5B168B22 /* WhoopWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		B5930C725B919F2767BE75FE /* WhoopWidgetHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FB669C820ACAB9B8CE4CF207 /* Build configuration list for PBXNativeTarget "WhoopWidgetHost" */;
+			buildPhases = (
+				2BD58781A491A5236C7AE515 /* Sources */,
+				D4AD039AFF02FC0CEC05B885 /* Resources */,
+				7048D9A7C5A61727BA942E0E /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A2AE65271E7AD16C0ACFF308 /* PBXTargetDependency */,
+			);
+			name = WhoopWidgetHost;
+			packageProductDependencies = (
+			);
+			productName = WhoopWidgetHost;
+			productReference = 66B06FB74C94EBF2A3DE8CA3 /* WhoopWidgetHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C3B44322BC48368B96D3861F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					884A1CE4F36ACFC1D1801530 = {
+						DevelopmentTeam = LSJNBX7SGH;
+						ProvisioningStyle = Automatic;
+					};
+					B5930C725B919F2767BE75FE = {
+						DevelopmentTeam = LSJNBX7SGH;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 2FB1F848567D2342DCF8CAFC /* Build configuration list for PBXProject "WHOOP" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D534CB111C4EEEC2822CD9DD;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 19569F3E799A21B0368D75BE /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				884A1CE4F36ACFC1D1801530 /* WhoopWidget */,
+				B5930C725B919F2767BE75FE /* WhoopWidgetHost */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D4AD039AFF02FC0CEC05B885 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DF7679B4F6C10DB9D6A52E5B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2BD58781A491A5236C7AE515 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				01EC7F13A47364A96969F481 /* WhoopAPI.swift in Sources */,
+				C10FDC30FB27C15E479A5A7A /* WhoopApp.swift in Sources */,
+				F78D08038E9938F07ED91EB7 /* WhoopIntents.swift in Sources */,
+				E3E0F7A4164D4EA3639A9AC1 /* WhoopMainView.swift in Sources */,
+				AB3664FC0011B788BF5B5930 /* WhoopShared.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D4D58E58C5D8345B0A8456CE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0D91D0C1B590011EA5BAFB7E /* WhoopShared.swift in Sources */,
+				02C31DEBE1ECE0D54A3176E7 /* WhoopWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A2AE65271E7AD16C0ACFF308 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 884A1CE4F36ACFC1D1801530 /* WhoopWidget */;
+			targetProxy = DD142EA6FEDBAD376E00058C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		13A96ED7D946977CF43987D2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = LSJNBX7SGH;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		1447D08C534A5C342C5A270A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ../widget/WhoopWidget.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "GeneratedInfo/WhoopWidget-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.lawrencetang.whoopwidget.WhoopWidget;
+				PRODUCT_NAME = WhoopWidget;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		1908BED23545085B91230AEF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ../widget/WhoopWidget.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "GeneratedInfo/WhoopWidget-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.lawrencetang.whoopwidget.WhoopWidget;
+				PRODUCT_NAME = WhoopWidget;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		2F823377CDC67C35CA237A59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ../widget/WhoopApp.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = WHOOP;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.lawrencetang.whoopwidget;
+				PRODUCT_NAME = "WHOOP Widget";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		A09FC7C6C2D8B7AA60C93E3E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = LSJNBX7SGH;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D22A07E3C973696179EDD39D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ../widget/WhoopApp.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = WHOOP;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.lawrencetang.whoopwidget;
+				PRODUCT_NAME = "WHOOP Widget";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2FB1F848567D2342DCF8CAFC /* Build configuration list for PBXProject "WHOOP" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A09FC7C6C2D8B7AA60C93E3E /* Debug */,
+				13A96ED7D946977CF43987D2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		42E5C52E59487BC0BCC139BE /* Build configuration list for PBXNativeTarget "WhoopWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1908BED23545085B91230AEF /* Debug */,
+				1447D08C534A5C342C5A270A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FB669C820ACAB9B8CE4CF207 /* Build configuration list for PBXNativeTarget "WhoopWidgetHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D22A07E3C973696179EDD39D /* Debug */,
+				2F823377CDC67C35CA237A59 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C3B44322BC48368B96D3861F /* Project object */;
+}

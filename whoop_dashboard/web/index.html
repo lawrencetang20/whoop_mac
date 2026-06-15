@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WHOOP Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1/dist/chartjs-chart-matrix.min.js"></script>
+</head>
+<body>
+  <header class="nav">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="logo">WHOOP</span>
+      <span id="greeting" class="muted"></span>
+    </div>
+    <nav class="tabs">
+      <a class="tab" data-tab="overview" href="#overview">Overview</a>
+      <a class="tab" data-tab="recovery" href="#recovery">Recovery</a>
+      <a class="tab" data-tab="sleep" href="#sleep">Sleep</a>
+      <a class="tab" data-tab="strain" href="#strain">Strain</a>
+      <a class="tab" data-tab="nutrition" href="#nutrition">Nutrition</a>
+      <a class="tab" data-tab="activities" href="#activities">Activities</a>
+    </nav>
+    <div class="actions">
+      <select id="range">
+        <option value="7">7 days</option>
+        <option value="30" selected>30 days</option>
+        <option value="90">90 days</option>
+        <option value="180">6 months</option>
+        <option value="365">1 year</option>
+        <option value="1825">All</option>
+      </select>
+      <button id="sync">Sync</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section class="section" id="overview">
+      <div class="hero">
+        <div class="card glow recovery">
+          <div class="card-top"><span class="card-label">Recovery</span><span class="chip" id="rec-chip"></span></div>
+          <div class="ring" id="rec-ring">
+            <div class="ring-inner"><div class="ring-val"><span id="rec-score">--</span><span class="pct">%</span></div></div>
+          </div>
+          <div class="card-sub" id="rec-sub">HRV -- · RHR --</div>
+        </div>
+        <div class="card glow sleep">
+          <div class="card-top"><span class="card-label">Sleep</span><span class="chip" id="sleep-chip"></span></div>
+          <div class="big" id="sleep-hours">--</div>
+          <div class="meter"><span id="sleep-perf-bar"></span></div>
+          <div class="card-sub" id="sleep-sub">Performance --%</div>
+        </div>
+        <div class="card glow strain">
+          <div class="card-top"><span class="card-label">Day Strain</span><span class="chip" id="strain-chip"></span></div>
+          <div class="big" id="strain-val">--</div>
+          <div class="meter"><span id="strain-bar"></span></div>
+          <div class="card-sub" id="strain-sub">Avg HR -- · -- cal</div>
+        </div>
+      </div>
+
+      <h3 class="section-title">Insights</h3>
+      <div class="insights" id="insights"></div>
+
+      <h3 class="section-title">Averages <span id="range-label" class="muted"></span></h3>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <!-- RECOVERY -->
+    <section class="section" id="recovery">
+      <div class="grid">
+        <div class="panel wide"><h3>Recovery %</h3><div class="chart"><canvas id="chart-recovery"></canvas></div></div>
+        <div class="panel"><h3>Heart Rate Variability (ms)</h3><div class="chart"><canvas id="chart-hrv"></canvas></div></div>
+        <div class="panel"><h3>Resting Heart Rate (bpm)</h3><div class="chart"><canvas id="chart-rhr"></canvas></div></div>
+        <div class="panel wide"><h3>Recovery calendar</h3><div class="chart tall"><canvas id="chart-calendar"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- SLEEP -->
+    <section class="section" id="sleep">
+      <div class="grid">
+        <div class="panel wide"><h3>Sleep stages (hours)</h3><div class="chart"><canvas id="chart-sleep"></canvas></div></div>
+        <div class="panel"><h3>Performance &amp; efficiency (%)</h3><div class="chart"><canvas id="chart-sleep-perf"></canvas></div></div>
+        <div class="panel"><h3>Sleep need vs actual (h)</h3><div class="chart"><canvas id="chart-sleep-need"></canvas></div></div>
+        <div class="panel wide"><h3>Respiratory rate (rpm)</h3><div class="chart"><canvas id="chart-resp"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- STRAIN -->
+    <section class="section" id="strain">
+      <div class="grid">
+        <div class="panel wide"><h3>Day strain</h3><div class="chart"><canvas id="chart-strain"></canvas></div></div>
+        <div class="panel wide"><h3>Calories burned</h3><div class="chart"><canvas id="chart-cal"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- NUTRITION -->
+    <section class="section" id="nutrition">
+      <div class="hero nutri-hero">
+        <div class="card">
+          <div class="card-top"><span class="card-label">Eaten today</span><span class="chip" id="nutri-goal-chip"></span></div>
+          <div class="big" id="nutri-in">--</div>
+          <div class="meter goal-meter"><span id="nutri-goal-bar"></span></div>
+          <div class="card-sub" id="nutri-remaining"></div>
+          <div class="card-sub" id="nutri-macros">P -- · C -- · F --</div>
+        </div>
+        <div class="card">
+          <div class="card-top"><span class="card-label">Burned today</span></div>
+          <div class="big" id="nutri-out">--</div>
+          <div class="card-sub">WHOOP energy out</div>
+        </div>
+        <div class="card">
+          <div class="card-top"><span class="card-label">Net</span></div>
+          <div class="big" id="nutri-net">--</div>
+          <div class="card-sub">intake − burned</div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <h3>Log food</h3>
+          <form id="goal-form" class="goal-form">
+            <label for="goal-input">Daily goal</label>
+            <input id="goal-input" type="number" min="0" step="10" placeholder="e.g. 2200">
+            <span class="muted">cal</span>
+            <button type="submit">Set</button>
+          </form>
+          <form id="food-nl" class="food-form">
+            <input id="food-q" type="text" autocomplete="off" aria-label="Describe what you ate"
+                   placeholder="e.g. 2 eggs and a slice of toast">
+            <button type="submit" id="food-lookup-btn">Look up</button>
+          </form>
+          <div id="food-preview" class="food-preview hidden"></div>
+          <details id="food-manual" class="food-manual">
+            <summary>Enter manually</summary>
+            <form id="food-manual-form" class="food-grid">
+              <input id="m-name" type="text" placeholder="Food name" aria-label="Food name" required>
+              <input id="m-cal" type="number" placeholder="Calories" aria-label="Calories" min="0" step="1" required>
+              <input id="m-p" type="number" placeholder="Protein g" aria-label="Protein (grams)" min="0" step="0.1">
+              <input id="m-c" type="number" placeholder="Carbs g" aria-label="Carbs (grams)" min="0" step="0.1">
+              <input id="m-f" type="number" placeholder="Fat g" aria-label="Fat (grams)" min="0" step="0.1">
+              <button type="submit">Add</button>
+            </form>
+          </details>
+          <div id="food-msg" class="food-msg"></div>
+        </div>
+        <div class="panel">
+          <h3>Today’s food</h3>
+          <ul id="food-list" class="food-list"></ul>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="panel wide"><h3>Energy balance (in vs out)</h3><div class="chart"><canvas id="chart-energy"></canvas></div></div>
+        <div class="panel wide"><h3>Calories eaten</h3><div class="chart"><canvas id="chart-intake"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- ACTIVITIES -->
+    <section class="section" id="activities">
+      <div class="sport-cards" id="sport-cards"></div>
+      <div class="grid">
+        <div class="panel wide"><h3>Total strain by sport</h3><div class="chart"><canvas id="chart-sports"></canvas></div></div>
+      </div>
+      <div class="panel">
+        <h3>All workouts</h3>
+        <table id="workouts"><thead><tr>
+          <th>Date</th><th>Sport</th><th class="r">Strain</th><th class="r">Duration</th>
+          <th class="r">Avg HR</th><th class="r">Max HR</th><th class="r">Calories</th><th class="r">Distance</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </section>
+  </main>
+
+  <footer id="footer" class="muted"></footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

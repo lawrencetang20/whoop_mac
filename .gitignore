@@ -1,0 +1,34 @@
+# Secrets & local state
+.env
+*.sqlite
+*.sqlite3
+*.db
+tokens.json
+latest.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.app
+widget/.build/
+
+# Xcode per-user state & derived data (the project itself is generated from xcode/project.yml)
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+DerivedData/
+*.xcscmblueprint
+
+# Secrets (extra safety — also covered above)
+.env.local
+*.pem

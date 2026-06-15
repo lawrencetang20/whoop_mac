@@ -1,0 +1,6 @@
+# WHOOP local dashboard — Python dependencies
+httpx>=0.27          # HTTP client for the WHOOP API + OAuth token exchange
+rumps>=0.4.0         # macOS menu bar app (wraps PyObjC)
+fastapi>=0.115       # local dashboard web framework
+uvicorn>=0.30        # ASGI server for the dashboard
+python-dotenv>=1.0   # load CLIENT_ID / CLIENT_SECRET from .env
