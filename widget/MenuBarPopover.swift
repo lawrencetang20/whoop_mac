@@ -49,12 +49,15 @@ struct MenuBarBadge: View {
                     .stroke(c, style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             }
-            .frame(width: 14, height: 14)
+            // The stroke is centered on the circle's path and overflows its frame by ~half the
+            // line width; this inset keeps the full ring inside the rendered image so its edges
+            // aren't clipped flat in the menu bar.
+            .frame(width: 13, height: 13)
+            .padding(2)
             Text(score.map(String.init) ?? "--")
                 .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(c)
         }
-        .padding(.vertical, 1)
         .frame(height: 18)
     }
 }
