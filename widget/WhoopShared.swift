@@ -282,6 +282,13 @@ struct RecoveryRing: View {
         return min(max(CGFloat(s) / 100, 0), 1)
     }
 
+    /// When animating, the arc is driven by the same counting-up `shown` value as the center
+    /// number, so the ring fills in lockstep with the digits instead of appearing pre-filled.
+    private var arcFraction: CGFloat {
+        let raw = (animate && score != nil) ? CGFloat(shown) / 100 : fraction
+        return min(max(raw, 0), 1)
+    }
+
     private var color: Color { recoveryColor(score) }
 
     var body: some View {
@@ -292,14 +299,17 @@ struct RecoveryRing: View {
 
             // Progress arc, starting at 12 o'clock and sweeping clockwise.
             Circle()
-                .trim(from: 0, to: fraction)
+                .trim(from: 0, to: arcFraction)
                 .stroke(
                     color.gradient,
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .shadow(color: color.opacity(0.35), radius: 4)
-                .animation(Motion.settle, value: fraction)
+                // No implicit .animation here: when animating, the arc rides the same
+                // withAnimation transaction that drives `shown` (so it sweeps up once, in
+                // sync with the number, instead of double-animating up-then-down). When not
+                // animating, arcFraction == fraction and it renders statically (widgets).
 
             // Center label
             VStack(spacing: 1) {
