@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import re
 import threading
 from datetime import date, timedelta
@@ -15,6 +16,7 @@ from datetime import date, timedelta
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from pathlib import Path
 
@@ -23,6 +25,15 @@ from . import auth, config, nutritionix, snapshot, store, sync
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 app = FastAPI(title="WHOOP Dashboard", docs_url=None, redoc_url=None)
+
+# Reject foreign Host headers so a malicious site can't DNS-rebind a domain to 127.0.0.1
+# and read your local health data as "same origin". Only the names the legitimate client
+# actually uses are allowed; add a phone/tailnet host via DASHBOARD_ALLOWED_HOSTS if needed.
+_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "::1"]
+if config.DASHBOARD_HOST not in ("0.0.0.0", "::", ""):
+    _ALLOWED_HOSTS.append(config.DASHBOARD_HOST)
+_ALLOWED_HOSTS += [h.strip() for h in os.getenv("DASHBOARD_ALLOWED_HOSTS", "").split(",") if h.strip()]
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_ALLOWED_HOSTS)
 
 
 def _asset_hash(name: str) -> str:
@@ -43,6 +54,14 @@ async def _gate(request: Request, call_next):
     A request from your phone must carry the token once (?token=…), after which a
     cookie keeps it authorized. Leave the token empty if you only reach the dashboard
     over a private Tailscale tailnet."""
+    # CSRF defense: reject cross-site state-changing requests so a hostile web page can't
+    # POST /api/sync (or DELETE food) at your local engine. Modern browsers send Sec-Fetch-Site;
+    # same-origin/same-site/none (a direct navigation) are allowed, cross-site is blocked.
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        sfs = request.headers.get("sec-fetch-site")
+        if sfs and sfs not in ("same-origin", "same-site", "none"):
+            return JSONResponse({"error": "cross-site request blocked"}, status_code=403)
+
     token = config.DASHBOARD_TOKEN
     host = request.client.host if request.client else ""
     if token and host not in ("127.0.0.1", "::1"):
@@ -139,6 +158,7 @@ def status():
         "credentials_present": config.credentials_present(),
         "last_sync": store.get_state("last_sync"),
         "last_backfill": store.get_state("last_backfill"),
+        "last_sync_error": store.get_state("last_sync_error") or None,
         "counts": store.counts(),
         "profile": store.profile(),
         "nutritionix": config.nutritionix_configured(),
@@ -201,6 +221,11 @@ def trigger_sync():
     result = sync.sync()  # sync.py serializes concurrent syncs internally
     if result.get("skipped"):
         return JSONResponse({"status": "already syncing"}, status_code=202)
+    # If every WHOOP resource failed (e.g. API unreachable / auth expired), report a real error
+    # rather than a misleading 200, so the app shows a failure state. Partial failures stay ok.
+    if set(result.get("failed", [])) >= {"cycles", "recoveries", "sleeps", "workouts"}:
+        return JSONResponse({"status": "error", "result": result,
+                             "error": "Couldn't reach WHOOP — sync failed."}, status_code=502)
     return {"status": "ok", "result": result}
 
 
@@ -337,8 +362,18 @@ def serve_in_thread(port: int | None = None, on_error=None) -> threading.Thread 
             on_error(f"Dashboard port {port} is already in use (another instance?)")
         return None
 
+    # Fail safe: never expose unauthenticated health data on a public interface. Binding
+    # 0.0.0.0/LAN without a DASHBOARD_TOKEN would let anyone on the network read everything,
+    # so fall back to loopback and warn instead.
+    host = config.DASHBOARD_HOST
+    if host not in ("127.0.0.1", "::1", "localhost") and not config.DASHBOARD_TOKEN:
+        if on_error:
+            on_error(f"Refusing to bind {host} without DASHBOARD_TOKEN; using 127.0.0.1. "
+                     "Set DASHBOARD_TOKEN in .env to enable remote access.")
+        host = "127.0.0.1"
+
     server = uvicorn.Server(
-        uvicorn.Config(app, host=config.DASHBOARD_HOST, port=port, log_level="warning")
+        uvicorn.Config(app, host=host, port=port, log_level="warning")
     )
 
     def _run():

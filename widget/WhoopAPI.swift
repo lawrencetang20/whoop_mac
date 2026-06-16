@@ -200,6 +200,7 @@ final class WhoopData: ObservableObject {
     }
 
     func load(days: Int) async {
+        guard !loading else { return }   // de-dupe overlapping loads (badge loop, popover, 60s timer)
         loading = true
         error = nil
         do {

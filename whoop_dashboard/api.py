@@ -131,12 +131,17 @@ class WhoopClient:
 
 
 def _retry_after(resp: httpx.Response) -> float:
-    """Seconds to wait before retrying a 429, from WHOOP's headers (fallback: 5s)."""
+    """Seconds to wait before retrying a 429, from WHOOP's headers (fallback: 5s).
+    Clamped to [1, 60]s so a bogus or epoch-style header can never hang the sync worker."""
     for header in ("X-RateLimit-Reset", "Retry-After", "x-ratelimit-reset"):
         val = resp.headers.get(header)
-        if val:
-            try:
-                return max(1.0, float(val))
-            except ValueError:
-                pass
+        if not val:
+            continue
+        try:
+            n = float(val)
+        except ValueError:
+            continue
+        if n > 1_000_000_000:   # an absolute unix epoch, not a delta — convert to seconds-from-now
+            n = n - time.time()
+        return max(1.0, min(n, 60.0))
     return 5.0

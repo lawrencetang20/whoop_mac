@@ -11,6 +11,7 @@ import AppKit
 /// Shared navigation state so the popover can deep-link the main window to a section.
 @MainActor final class AppState: ObservableObject {
     @Published var section: AppSection = .overview
+    @Published var expanded: ExpandedChart?   // the chart currently popped into the lightbox
 }
 
 // MARK: - Menu-bar label (the badge in the bar)

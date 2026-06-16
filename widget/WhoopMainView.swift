@@ -183,8 +183,10 @@ func computeInsights(_ d: WhoopData) -> [Insight] {
 // MARK: - Building blocks
 
 struct AmbientBackground: View {
+    @Environment(\.controlActiveState) private var controlActive
     @State private var drift = false
     var body: some View {
+        let active = controlActive != .inactive
         ZStack {
             P.bg
             blob(P.teal.opacity(0.16),   760, drift ? 300 : 340, drift ? -370 : -320, 40)
@@ -192,8 +194,11 @@ struct AmbientBackground: View {
             blob(P.green.opacity(0.08),  720, drift ? 36 : -36,    drift ? 500 : 460, 50)
         }
         .ignoresSafeArea()
-        // Slow, continuous drift so the backdrop feels alive (great on a demo screen).
-        .onAppear { withAnimation(.easeInOut(duration: 17).repeatForever(autoreverses: true)) { drift = true } }
+        // Slow, continuous drift so the backdrop feels alive (great on a demo screen) — but
+        // paused when the window isn't active so it doesn't burn cycles off-screen.
+        .animation(active ? .easeInOut(duration: 17).repeatForever(autoreverses: true) : .easeOut(duration: 0.8), value: drift)
+        .onAppear { drift = active }
+        .onChange(of: active) { _, a in drift = a }
     }
     private func blob(_ c: Color, _ size: CGFloat, _ x: CGFloat, _ y: CGFloat, _ blur: CGFloat) -> some View {
         Circle()
@@ -405,28 +410,359 @@ struct Sparkline: View {
     }
 }
 
+// MARK: - Tap-to-expand interactive charts (lightbox)
+
+/// Payload for the currently expanded chart. The chart is a closure of (expanded, selection
+/// binding) so the SAME bespoke `Chart {…}` body renders both inline and enlarged, and the
+/// lightbox owns the scrubbing selection.
+struct ExpandedChart: Identifiable {
+    let id: String
+    let title: String
+    let accent: Color
+    let chart: (_ expanded: Bool, _ sel: Binding<Date?>) -> AnyView
+}
+
+/// Wraps a chart in a Glass card that, on tap, pops it into a large interactive lightbox.
+/// Inline it has no selection/scrub (so the tap is unambiguous); all interactivity lives in
+/// the expanded view, where there's room for it.
+struct ChartCard<Content: View>: View {
+    let id: String
+    let title: String
+    let accent: Color
+    var canExpand: Bool = true
+    @ViewBuilder let content: (_ expanded: Bool, _ sel: Binding<Date?>) -> Content
+    @EnvironmentObject private var appState: AppState
+    @State private var hover = false
+
+    var body: some View {
+        Glass(title: title, accent: accent) {
+            content(false, .constant(nil))
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                        .opacity(hover ? 0.9 : 0)
+                        .help("Expand")
+                }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard canExpand else { return }
+            appState.expanded = ExpandedChart(id: id, title: title, accent: accent) { exp, sel in
+                AnyView(content(exp, sel))
+            }
+        }
+        .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+        .scaleEffect(hover ? 1.004 : 1)
+    }
+}
+
+/// The full-window modal that presents an expanded chart: dim+blur backdrop, a Glass panel
+/// that springs in, and Esc / X / click-outside to dismiss.
+struct ChartLightbox: View {
+    let item: ExpandedChart
+    var onClose: () -> Void
+    @State private var present = false
+    @State private var sel: Date?
+    @State private var closing = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = min(proxy.size.width * 0.84, 980)
+            let h = min(proxy.size.height * 0.82, 740)
+            ZStack {
+                // Backdrop — animate opacity only (never blur radius).
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    Color.black.opacity(0.38)
+                }
+                .opacity(present ? 1 : 0)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { close() }
+
+                panel
+                    .frame(width: w, height: h)
+                    .scaleEffect(present ? 1 : 0.94)
+                    .opacity(present ? 1 : 0)
+                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            }
+        }
+        .allowsHitTesting(!closing)   // stop the fading backdrop from eating clicks/Esc during exit
+        .focusable()
+        .focused($focused)
+        .onExitCommand { close() }
+        .onAppear {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) { present = true }
+            focused = true
+        }
+    }
+
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text(item.title.uppercased())
+                    .font(.system(size: 12, weight: .heavy)).tracking(0.8).foregroundStyle(.secondary)
+                Spacer()
+                Button { close() } label: {
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(P.stroke))
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("Close (Esc)")
+            }
+            item.chart(true, $sel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(24)
+        .background(LinearGradient(colors: [.white.opacity(0.06), .white.opacity(0.015)], startPoint: .top, endPoint: .bottom))
+        .overlay(alignment: .leading) { Rectangle().fill(item.accent).frame(width: 3).clipShape(Capsule()) }
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(item.accent.opacity(0.35)))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.5), radius: 40, y: 18)
+        .background(P.bg.clipShape(RoundedRectangle(cornerRadius: 20)))   // opaque base so the blurred dashboard doesn't bleed through
+        .contentShape(Rectangle())
+        .onTapGesture {}   // swallow taps so they don't reach the backdrop (scrub is a drag, unaffected)
+    }
+
+    private func close() {
+        guard !closing else { return }
+        closing = true
+        sel = nil   // don't render a frozen crosshair through the dismiss animation
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.92)) { present = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) { onClose() }
+    }
+}
+
+// MARK: Chart helpers shared by inline + expanded rendering
+
+extension View {
+    @ViewBuilder func chartXSelectionIf(_ on: Bool, value: Binding<Date?>) -> some View {
+        if on { self.chartXSelection(value: value) } else { self }
+    }
+    @ViewBuilder func applyIf<T: View>(_ cond: Bool, _ transform: (Self) -> T) -> some View {
+        if cond { transform(self) } else { self }
+    }
+}
+
+/// Larger axes + faint y-gridlines when expanded; the compact `timeAxis()` inline.
+struct ExpandableAxis: ViewModifier {
+    let expanded: Bool
+    func body(content: Content) -> some View {
+        if expanded {
+            content
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 8)) {
+                        AxisGridLine().foregroundStyle(Color.white.opacity(0.05))
+                        AxisValueLabel(format: .dateTime.month(.abbreviated).day()).font(.system(size: 11))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks {
+                        AxisGridLine().foregroundStyle(Color.white.opacity(0.06))
+                        AxisValueLabel().font(.system(size: 11))
+                    }
+                }
+        } else {
+            content.timeAxis()
+        }
+    }
+}
+
+/// Cursor-tracking crosshair: hovering the expanded plot drives `sel` so the rule + tooltip
+/// follow the pointer without a click. Line/area charts only.
+struct CursorScrub: ViewModifier {
+    @Binding var sel: Date?
+    let active: Bool
+    func body(content: Content) -> some View {
+        if active {
+            content.chartOverlay { proxy in
+                GeometryReader { geo in
+                    Rectangle().fill(Color.clear).contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            guard case .active(let pt) = phase, let plot = proxy.plotFrame else { sel = nil; return }
+                            let originX = geo[plot].origin.x
+                            sel = proxy.value(atX: pt.x - originX)   // never animate — must track 1:1
+                        }
+                }
+            }
+        } else { content }
+    }
+}
+extension View {
+    func cursorScrub(_ sel: Binding<Date?>, active: Bool) -> some View { modifier(CursorScrub(sel: sel, active: active)) }
+}
+
+/// MIN / AVG / MAX / LATEST summary cells shown above an expanded chart.
+@ViewBuilder
+func chartStatStrip(_ values: [Double], _ fmt: @escaping (Double) -> String, accent: Color) -> some View {
+    let xs = values.filter { $0.isFinite }
+    let avg = xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count)
+    HStack(spacing: 10) {
+        chartStatCell("MIN", xs.min(), fmt, accent)
+        chartStatCell("AVG", avg, fmt, accent)
+        chartStatCell("MAX", xs.max(), fmt, accent)
+        chartStatCell("LATEST", xs.last, fmt, accent)
+    }
+}
+private func chartStatCell(_ label: String, _ v: Double?, _ fmt: (Double) -> String, _ accent: Color) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        Text(v.map(fmt) ?? "--").font(.system(size: 19, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(accent)
+        Text(label).font(.system(size: 10, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 9).padding(.horizontal, 12)
+    .background(Color.white.opacity(0.04))
+    .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.stroke))
+    .clipShape(RoundedRectangle(cornerRadius: 12))
+}
+
+// MARK: Reusable chart builders (shared by the sections AND the Overview expand cards)
+
+@MainActor @ViewBuilder
+func recoveryScoreChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> some View {
+    VStack(spacing: 14) {
+        if expanded { chartStatStrip(data.recovery.compactMap { $0.recovery_score.map(Double.init) }, { "\(Int($0))%" }, accent: P.green) }
+        Chart {
+            ForEach(data.recovery) { p in
+                if let v = p.recovery_score {
+                    AreaMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v))
+                        .foregroundStyle(.linearGradient(colors: [P.green.opacity(0.18), P.green.opacity(0.01)], startPoint: .top, endPoint: .bottom))
+                    LineMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v))
+                        .foregroundStyle(recoveryGradient).lineStyle(.init(lineWidth: 2.5)).interpolationMethod(.catmullRom)
+                }
+            }
+            if expanded, let s = sel.wrappedValue, let p = nearestDay(data.recovery, \.day, to: s), let v = p.recovery_score {
+                RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
+                PointMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v)).foregroundStyle(recoveryColor(v)).symbolSize(70)
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v)%") }
+            }
+        }
+        .chartYScale(domain: 0...100)
+        .modifier(ExpandableAxis(expanded: expanded))
+        .cursorScrub(sel, active: expanded)
+        .frame(height: expanded ? nil : 230)
+        .frame(maxHeight: expanded ? .infinity : nil)
+        .applyIf(!expanded) { $0.drawIn() }
+    }
+}
+
+@MainActor @ViewBuilder
+func sleepHoursChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> some View {
+    VStack(spacing: 14) {
+        if expanded { chartStatStrip(data.sleep.compactMap { $0.hours }, { fmtHrs($0) }, accent: P.blue) }
+        Chart {
+            ForEach(data.sleep) { p in
+                if let v = p.hours {
+                    AreaMark(x: .value("Day", parseDay(p.day)), y: .value("Hours", v))
+                        .foregroundStyle(.linearGradient(colors: [P.blue.opacity(0.25), P.blue.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                    LineMark(x: .value("Day", parseDay(p.day)), y: .value("Hours", v)).foregroundStyle(P.blue).interpolationMethod(.catmullRom)
+                }
+            }
+            if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s), let v = p.hours {
+                RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
+                PointMark(x: .value("Day", parseDay(p.day)), y: .value("Hours", v)).foregroundStyle(P.blue).symbolSize(70)
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, fmtHrs(v)) }
+            }
+        }
+        .modifier(ExpandableAxis(expanded: expanded))
+        .cursorScrub(sel, active: expanded)
+        .frame(height: expanded ? nil : 230)
+        .frame(maxHeight: expanded ? .infinity : nil)
+        .applyIf(!expanded) { $0.drawIn() }
+    }
+}
+
+@MainActor @ViewBuilder
+func dayStrainChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> some View {
+    VStack(spacing: 14) {
+        if expanded { chartStatStrip(data.strain.compactMap { $0.strain }, { one($0) }, accent: P.teal) }
+        Chart {
+            ForEach(data.strain) { p in
+                if let v = p.strain { BarMark(x: .value("Day", parseDay(p.day)), y: .value("Strain", v)).foregroundStyle(P.teal.gradient) }
+            }
+            if expanded, let s = sel.wrappedValue, let p = nearestDay(data.strain, \.day, to: s), let v = p.strain {
+                RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, one(v)) }
+            }
+        }
+        .chartYScale(domain: 0...21)
+        .modifier(ExpandableAxis(expanded: expanded))
+        .cursorScrub(sel, active: expanded)
+        .frame(height: expanded ? nil : 230)
+        .frame(maxHeight: expanded ? .infinity : nil)
+        .applyIf(!expanded) { $0.drawIn() }
+    }
+}
+
+/// Wraps arbitrary inline card content (e.g. the Overview hero / sleep / strain cards) so that
+/// tapping it pops a related full chart into the lightbox. Unlike ChartCard, the inline content
+/// and the expanded chart are different views.
+struct ExpandableCard<Inline: View>: View {
+    let id: String
+    let title: String
+    let accent: Color
+    var canExpand: Bool = true
+    let makeChart: (_ expanded: Bool, _ sel: Binding<Date?>) -> AnyView
+    @ViewBuilder let inline: () -> Inline
+    @EnvironmentObject private var appState: AppState
+    @State private var hover = false
+
+    var body: some View {
+        inline()
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
+                    .padding(8)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                    .opacity(hover ? 0.9 : 0)
+                    .help("Expand")
+                    .padding(6)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard canExpand else { return }
+                appState.expanded = ExpandedChart(id: id, title: title, accent: accent, chart: makeChart)
+            }
+            .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+    }
+}
+
 // MARK: - Calendar heatmap
 
 struct CalendarHeatmap: View {
     let points: [RecoveryPoint]
     private struct Cell { let day: String?; let score: Int? }
     private let wdLabels = ["S", "M", "T", "W", "T", "F", "S"]
-    private var columns: [[Cell]] {
+    private let cols: [[Cell]]   // built once at init, not on every body render (matters on the "All" range)
+
+    init(points: [RecoveryPoint]) {
+        self.points = points
+        self.cols = Self.buildColumns(points)
+    }
+
+    private static func buildColumns(_ points: [RecoveryPoint]) -> [[Cell]] {
         let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"; fmt.locale = Locale(identifier: "en_US_POSIX")
         var map: [String: Int] = [:]; var dates: [Date] = []
         for p in points { if let dt = fmt.date(from: p.day) { dates.append(dt); if let s = p.recovery_score { map[p.day] = s } } }
         guard let first = dates.min(), let last = dates.max() else { return [] }
         let cal = Calendar(identifier: .gregorian)
         var cur = cal.date(byAdding: .day, value: -(cal.component(.weekday, from: first) - 1), to: first)!
-        var cols: [[Cell]] = []; var col: [Cell] = []
+        var out: [[Cell]] = []; var col: [Cell] = []
         while cur <= last {
             let key = fmt.string(from: cur)
             col.append(Cell(day: cur >= first ? key : nil, score: map[key]))
-            if col.count == 7 { cols.append(col); col = [] }
+            if col.count == 7 { out.append(col); col = [] }
             cur = cal.date(byAdding: .day, value: 1, to: cur)!
         }
-        if !col.isEmpty { while col.count < 7 { col.append(Cell(day: nil, score: nil)) }; cols.append(col) }
-        return cols
+        if !col.isEmpty { while col.count < 7 { col.append(Cell(day: nil, score: nil)) }; out.append(col) }
+        return out
     }
     private func color(_ s: Int?) -> Color { s == nil ? Color.white.opacity(0.05) : recoveryColor(s) }
     var body: some View {
@@ -438,7 +774,7 @@ struct CalendarHeatmap: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 3) {
-                    ForEach(Array(columns.enumerated()), id: \.offset) { _, col in
+                    ForEach(Array(cols.enumerated()), id: \.offset) { _, col in
                         VStack(spacing: 3) {
                             ForEach(0..<7, id: \.self) { r in
                                 RoundedRectangle(cornerRadius: 2.5).fill(color(col[r].score)).frame(width: 12, height: 12)
@@ -482,6 +818,7 @@ struct WhoopMainView: View {
     @State private var days = 30
 
     var body: some View {
+        ZStack {
         NavigationSplitView {
             List(AppSection.allCases, selection: $appState.section) { s in
                 Label {
@@ -541,10 +878,9 @@ struct WhoopMainView: View {
                     .animation(.spring(response: 0.42, dampingFraction: 0.86), value: appState.section)
                 }
                 .scrollContentBackground(.hidden)
+                .scrollDisabled(appState.expanded != nil)   // don't scroll the dashboard behind the lightbox
             }
         }
-        .frame(minWidth: 1000, minHeight: 700)
-        .preferredColorScheme(.dark)
         .task { await data.load(days: days) }
         .onChange(of: days) { _, v in Task { await data.load(days: v) } }
         // Auto-refresh every 60s so the app stays current with the menu-bar app's syncs.
@@ -558,6 +894,16 @@ struct WhoopMainView: View {
             }
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
+
+            // Tap-to-expand chart lightbox — mounted at the root so it dims the whole window and
+            // is never caught by the section's redaction/shimmer.
+            if let item = appState.expanded {
+                ChartLightbox(item: item) { appState.expanded = nil }
+                    .zIndex(10)
+            }
+        }
+        .frame(minWidth: 1000, minHeight: 700)
+        .preferredColorScheme(.dark)
     }
 
     private var header: some View {
@@ -675,28 +1021,38 @@ struct OverviewSection: View {
         let sum = data.summary
         let ins = computeInsights(data)
         VStack(alignment: .leading, spacing: 18) {
-            HeroCard(data: data).reveal(0, appeared)
+            ExpandableCard(id: "ov.recovery", title: "Recovery %", accent: P.green, canExpand: data.latest != nil,
+                           makeChart: { exp, sel in AnyView(recoveryScoreChart(data, expanded: exp, sel: sel)) }) {
+                HeroCard(data: data)
+            }
+            .reveal(0, appeared)
             HStack(alignment: .top, spacing: 18) {
-                Glass(accent: P.blue) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack { sectionEyebrow("SLEEP")
-                            TrendChip(delta: deltaD(slp?.hours, slpP?.hours).map { $0 * 60 }, unit: "m") }
-                        CountUp(value: slp?.hours, render: fmtHrs).font(.system(size: 33, weight: .bold))
-                        kv("Performance", slp?.performance.map { "\(Int($0.rounded()))%" } ?? "--")
-                        kv("Efficiency", slp?.efficiency.map { "\(Int($0.rounded()))%" } ?? "--")
-                        kv("Sleep need", fmtHrs(slp?.need_hours))
-                        Sparkline(values: data.sleep.suffix(30).compactMap { $0.hours }, color: P.blue)
+                ExpandableCard(id: "ov.sleep", title: "Sleep (hours)", accent: P.blue, canExpand: data.latest != nil,
+                               makeChart: { exp, sel in AnyView(sleepHoursChart(data, expanded: exp, sel: sel)) }) {
+                    Glass(accent: P.blue) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack { sectionEyebrow("SLEEP")
+                                TrendChip(delta: deltaD(slp?.hours, slpP?.hours).map { $0 * 60 }, unit: "m") }
+                            CountUp(value: slp?.hours, render: fmtHrs).font(.system(size: 33, weight: .bold))
+                            kv("Performance", slp?.performance.map { "\(Int($0.rounded()))%" } ?? "--")
+                            kv("Efficiency", slp?.efficiency.map { "\(Int($0.rounded()))%" } ?? "--")
+                            kv("Sleep need", fmtHrs(slp?.need_hours))
+                            Sparkline(values: data.sleep.suffix(30).compactMap { $0.hours }, color: P.blue)
+                        }
                     }
                 }
-                Glass(accent: P.teal) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack { sectionEyebrow("DAY STRAIN")
-                            TrendChip(delta: deltaD(str?.strain, strP?.strain), decimals: 1) }
-                        CountUp(value: str?.strain, render: one).font(.system(size: 33, weight: .bold))
-                        kv("Avg HR", intStr(str?.average_heart_rate, " bpm"))
-                        kv("Max HR", intStr(str?.max_heart_rate, " bpm"))
-                        kv("Calories", grp(str?.calories))
-                        Sparkline(values: data.strain.suffix(30).compactMap { $0.strain }, color: P.teal)
+                ExpandableCard(id: "ov.strain", title: "Day strain (0–21)", accent: P.teal, canExpand: data.latest != nil,
+                               makeChart: { exp, sel in AnyView(dayStrainChart(data, expanded: exp, sel: sel)) }) {
+                    Glass(accent: P.teal) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack { sectionEyebrow("DAY STRAIN")
+                                TrendChip(delta: deltaD(str?.strain, strP?.strain), decimals: 1) }
+                            CountUp(value: str?.strain, render: one).font(.system(size: 33, weight: .bold))
+                            kv("Avg HR", intStr(str?.average_heart_rate, " bpm"))
+                            kv("Max HR", intStr(str?.max_heart_rate, " bpm"))
+                            kv("Calories", grp(str?.calories))
+                            Sparkline(values: data.strain.suffix(30).compactMap { $0.strain }, color: P.teal)
+                        }
                     }
                 }
             }
@@ -755,59 +1111,59 @@ struct OverviewSection: View {
 
 struct RecoverySection: View {
     @ObservedObject var data: WhoopData
-    @State private var sel: Date?
     var body: some View {
         VStack(spacing: 18) {
-            Glass(title: "Recovery %", accent: P.green) {
-                Chart {
-                    ForEach(data.recovery) { p in
-                        if let v = p.recovery_score {
-                            AreaMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v))
-                                .foregroundStyle(.linearGradient(colors: [P.green.opacity(0.18), P.green.opacity(0.01)], startPoint: .top, endPoint: .bottom))
-                            LineMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v))
-                                .foregroundStyle(recoveryGradient).lineStyle(.init(lineWidth: 2.5)).interpolationMethod(.catmullRom)
-                        }
-                    }
-                    if let sel, let p = nearestDay(data.recovery, \.day, to: sel), let v = p.recovery_score {
-                        RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
-                        PointMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v)).foregroundStyle(recoveryColor(v)).symbolSize(70)
-                            .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v)%") }
-                    }
-                }
-                .chartYScale(domain: 0...100).chartXSelection(value: $sel).timeAxis().frame(height: 230).drawIn()
+            ChartCard(id: "rec.score", title: "Recovery %", accent: P.green, canExpand: data.latest != nil) { expanded, sel in
+                recoveryScoreChart(data, expanded: expanded, sel: sel)
             }
             HStack(spacing: 18) {
-                Glass(title: "HRV (ms)", accent: P.teal) {
-                    Chart {
-                        ForEach(data.recovery) { p in
-                            if let v = p.hrv_rmssd_milli {
-                                AreaMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v))
-                                    .foregroundStyle(.linearGradient(colors: [P.teal.opacity(0.3), P.teal.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                                LineMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v)).foregroundStyle(P.teal).interpolationMethod(.catmullRom)
+                ChartCard(id: "rec.hrv", title: "HRV (ms)", accent: P.teal, canExpand: data.latest != nil) { expanded, sel in
+                    VStack(spacing: 14) {
+                        if expanded { chartStatStrip(data.recovery.compactMap { $0.hrv_rmssd_milli }, { "\(Int($0.rounded())) ms" }, accent: P.teal) }
+                        Chart {
+                            ForEach(data.recovery) { p in
+                                if let v = p.hrv_rmssd_milli {
+                                    AreaMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v))
+                                        .foregroundStyle(.linearGradient(colors: [P.teal.opacity(0.3), P.teal.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                                    LineMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v)).foregroundStyle(P.teal).interpolationMethod(.catmullRom)
+                                }
+                            }
+                            if expanded, let s = sel.wrappedValue, let p = nearestDay(data.recovery, \.day, to: s), let v = p.hrv_rmssd_milli {
+                                RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
+                                PointMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v)).foregroundStyle(P.teal).symbolSize(70)
+                                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(Int(v.rounded())) ms") }
                             }
                         }
-                        if let sel, let p = nearestDay(data.recovery, \.day, to: sel), let v = p.hrv_rmssd_milli {
-                            RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
-                            PointMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v)).foregroundStyle(P.teal).symbolSize(70)
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(Int(v.rounded())) ms") }
-                        }
-                    }.chartXSelection(value: $sel).timeAxis().frame(height: 190)
+                        .modifier(ExpandableAxis(expanded: expanded))
+                        .chartXSelectionIf(expanded, value: sel)
+                        .cursorScrub(sel, active: expanded)
+                        .frame(height: expanded ? nil : 190)
+                        .frame(maxHeight: expanded ? .infinity : nil)
+                    }
                 }
-                Glass(title: "Resting HR (bpm)", accent: P.red) {
-                    Chart {
-                        ForEach(data.recovery) { p in
-                            if let v = p.resting_heart_rate {
-                                AreaMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v))
-                                    .foregroundStyle(.linearGradient(colors: [P.red.opacity(0.28), P.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                                LineMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v)).foregroundStyle(P.red).interpolationMethod(.catmullRom)
+                ChartCard(id: "rec.rhr", title: "Resting HR (bpm)", accent: P.red, canExpand: data.latest != nil) { expanded, sel in
+                    VStack(spacing: 14) {
+                        if expanded { chartStatStrip(data.recovery.compactMap { $0.resting_heart_rate.map(Double.init) }, { "\(Int($0)) bpm" }, accent: P.red) }
+                        Chart {
+                            ForEach(data.recovery) { p in
+                                if let v = p.resting_heart_rate {
+                                    AreaMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v))
+                                        .foregroundStyle(.linearGradient(colors: [P.red.opacity(0.28), P.red.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                                    LineMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v)).foregroundStyle(P.red).interpolationMethod(.catmullRom)
+                                }
+                            }
+                            if expanded, let s = sel.wrappedValue, let p = nearestDay(data.recovery, \.day, to: s), let v = p.resting_heart_rate {
+                                RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
+                                PointMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v)).foregroundStyle(P.red).symbolSize(70)
+                                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v) bpm") }
                             }
                         }
-                        if let sel, let p = nearestDay(data.recovery, \.day, to: sel), let v = p.resting_heart_rate {
-                            RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
-                            PointMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v)).foregroundStyle(P.red).symbolSize(70)
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v) bpm") }
-                        }
-                    }.chartXSelection(value: $sel).timeAxis().frame(height: 190)
+                        .modifier(ExpandableAxis(expanded: expanded))
+                        .chartXSelectionIf(expanded, value: sel)
+                        .cursorScrub(sel, active: expanded)
+                        .frame(height: expanded ? nil : 190)
+                        .frame(maxHeight: expanded ? .infinity : nil)
+                    }
                 }
             }
             Glass(title: "Recovery calendar", accent: P.green) {
@@ -822,49 +1178,61 @@ struct RecoverySection: View {
 
 struct SleepSection: View {
     @ObservedObject var data: WhoopData
-    @State private var sel: Date?
     private let stageColors: [Color] = [P.violet, P.blue, Color(red: 0.58, green: 0.77, blue: 0.99), Color.white.opacity(0.28)]
     var body: some View {
         VStack(spacing: 18) {
-            Glass(title: "Sleep stages (hours)", accent: P.blue) {
-                Chart {
-                    ForEach(data.sleep) { p in
-                        bar(p, "Deep", p.deep_hours); bar(p, "REM", p.rem_hours)
-                        bar(p, "Light", p.light_hours); bar(p, "Awake", p.awake_hours)
+            ChartCard(id: "sleep.stages", title: "Sleep stages (hours)", accent: P.blue, canExpand: data.latest != nil) { expanded, sel in
+                VStack(spacing: 14) {
+                    if expanded { chartStatStrip(data.sleep.map { ($0.deep_hours ?? 0) + ($0.rem_hours ?? 0) + ($0.light_hours ?? 0) + ($0.awake_hours ?? 0) }.filter { $0 > 0 }, { fmtHrs($0) }, accent: P.blue) }
+                    Chart {
+                        ForEach(data.sleep) { p in
+                            bar(p, "Deep", p.deep_hours); bar(p, "REM", p.rem_hours)
+                            bar(p, "Light", p.light_hours); bar(p, "Awake", p.awake_hours)
+                        }
+                        if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s) {
+                            RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                    chartTip(p.day, fmtHrs((p.deep_hours ?? 0) + (p.rem_hours ?? 0) + (p.light_hours ?? 0) + (p.awake_hours ?? 0)))
+                                }
+                        }
                     }
-                    if let sel, let p = nearestDay(data.sleep, \.day, to: sel) {
-                        RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                            .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                                chartTip(p.day, fmtHrs((p.deep_hours ?? 0) + (p.rem_hours ?? 0) + (p.light_hours ?? 0) + (p.awake_hours ?? 0)))
-                            }
-                    }
+                    .chartForegroundStyleScale(domain: ["Deep", "REM", "Light", "Awake"], range: stageColors)
+                    .modifier(ExpandableAxis(expanded: expanded))
+                    .chartXSelectionIf(expanded, value: sel)
+                    .cursorScrub(sel, active: expanded)
+                    .frame(height: expanded ? nil : 230)
+                    .frame(maxHeight: expanded ? .infinity : nil)
+                    .applyIf(!expanded) { $0.drawIn() }
                 }
-                .chartForegroundStyleScale(domain: ["Deep", "REM", "Light", "Awake"], range: stageColors)
-                .chartXSelection(value: $sel).timeAxis().frame(height: 230).drawIn()
             }
             HStack(spacing: 18) {
-                Glass(title: "Performance & efficiency (%)", accent: P.green) {
+                ChartCard(id: "sleep.perfeff", title: "Performance & efficiency (%)", accent: P.green, canExpand: data.latest != nil) { expanded, sel in
                     Chart {
                         ForEach(data.sleep) { p in
                             if let v = p.performance { LineMark(x: .value("Day", parseDay(p.day)), y: .value("V", v), series: .value("M", "Performance")).foregroundStyle(P.blue) }
                             if let v = p.efficiency { LineMark(x: .value("Day", parseDay(p.day)), y: .value("V", v), series: .value("M", "Efficiency")).foregroundStyle(P.green) }
                         }
-                        if let sel, let p = nearestDay(data.sleep, \.day, to: sel) {
+                        if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s) {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
                                 .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                     chartTip(p.day, "Perf \(p.performance.map { "\(Int($0.rounded()))%" } ?? "--") · Eff \(p.efficiency.map { "\(Int($0.rounded()))%" } ?? "--")")
                                 }
                         }
                     }.chartYScale(domain: 0...100).chartForegroundStyleScale(domain: ["Performance", "Efficiency"], range: [P.blue, P.green])
-                        .chartLegend(.visible).chartXSelection(value: $sel).timeAxis().frame(height: 190)
+                        .chartLegend(.visible)
+                        .modifier(ExpandableAxis(expanded: expanded))
+                        .chartXSelectionIf(expanded, value: sel)
+                        .cursorScrub(sel, active: expanded)
+                        .frame(height: expanded ? nil : 190)
+                        .frame(maxHeight: expanded ? .infinity : nil)
                 }
-                Glass(title: "Sleep need vs actual (h)", accent: P.violet) {
+                ChartCard(id: "sleep.need", title: "Sleep need vs actual (h)", accent: P.violet, canExpand: data.latest != nil) { expanded, sel in
                     Chart {
                         ForEach(data.sleep) { p in
                             if let v = p.hours { BarMark(x: .value("Day", parseDay(p.day)), y: .value("Hours", v)).foregroundStyle(by: .value("Series", "Slept")).position(by: .value("Series", "Slept")) }
                             if let v = p.need_hours { BarMark(x: .value("Day", parseDay(p.day)), y: .value("Hours", v)).foregroundStyle(by: .value("Series", "Needed")).position(by: .value("Series", "Needed")) }
                         }
-                        if let sel, let p = nearestDay(data.sleep, \.day, to: sel) {
+                        if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s) {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
                                 .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                     chartTip(p.day, "Slept \(fmtHrs(p.hours)) · Need \(fmtHrs(p.need_hours))")
@@ -872,24 +1240,37 @@ struct SleepSection: View {
                         }
                     }
                     .chartForegroundStyleScale(domain: ["Slept", "Needed"], range: [P.blue, P.red.opacity(0.55)])
-                    .chartLegend(.visible).chartXSelection(value: $sel).timeAxis().frame(height: 190)
+                    .chartLegend(.visible)
+                    .modifier(ExpandableAxis(expanded: expanded))
+                    .chartXSelectionIf(expanded, value: sel)
+                    .cursorScrub(sel, active: expanded)
+                    .frame(height: expanded ? nil : 190)
+                    .frame(maxHeight: expanded ? .infinity : nil)
                 }
             }
-            Glass(title: "Respiratory rate (rpm)", accent: P.violet) {
-                Chart {
-                    ForEach(data.sleep) { p in
-                        if let v = p.respiratory_rate {
-                            AreaMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v))
-                                .foregroundStyle(.linearGradient(colors: [P.violet.opacity(0.28), P.violet.opacity(0.02)], startPoint: .top, endPoint: .bottom))
-                            LineMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v)).foregroundStyle(P.violet).interpolationMethod(.catmullRom)
+            ChartCard(id: "sleep.resp", title: "Respiratory rate (rpm)", accent: P.violet, canExpand: data.latest != nil) { expanded, sel in
+                VStack(spacing: 14) {
+                    if expanded { chartStatStrip(data.sleep.compactMap { $0.respiratory_rate }, { String(format: "%.1f", $0) }, accent: P.violet) }
+                    Chart {
+                        ForEach(data.sleep) { p in
+                            if let v = p.respiratory_rate {
+                                AreaMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v))
+                                    .foregroundStyle(.linearGradient(colors: [P.violet.opacity(0.28), P.violet.opacity(0.02)], startPoint: .top, endPoint: .bottom))
+                                LineMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v)).foregroundStyle(P.violet).interpolationMethod(.catmullRom)
+                            }
+                        }
+                        if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s), let v = p.respiratory_rate {
+                            RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
+                            PointMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v)).foregroundStyle(P.violet).symbolSize(70)
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, String(format: "%.1f rpm", v)) }
                         }
                     }
-                    if let sel, let p = nearestDay(data.sleep, \.day, to: sel), let v = p.respiratory_rate {
-                        RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                        PointMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v)).foregroundStyle(P.violet).symbolSize(70)
-                            .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, String(format: "%.1f rpm", v)) }
-                    }
-                }.chartXSelection(value: $sel).timeAxis().frame(height: 170)
+                    .modifier(ExpandableAxis(expanded: expanded))
+                    .chartXSelectionIf(expanded, value: sel)
+                    .cursorScrub(sel, active: expanded)
+                    .frame(height: expanded ? nil : 170)
+                    .frame(maxHeight: expanded ? .infinity : nil)
+                }
             }
         }
     }
@@ -902,30 +1283,29 @@ struct SleepSection: View {
 
 struct StrainSection: View {
     @ObservedObject var data: WhoopData
-    @State private var sel: Date?
     var body: some View {
         VStack(spacing: 18) {
-            Glass(title: "Day strain (0–21)", accent: P.teal) {
-                Chart {
-                    ForEach(data.strain) { p in
-                        if let v = p.strain { BarMark(x: .value("Day", parseDay(p.day)), y: .value("Strain", v)).foregroundStyle(P.teal.gradient) }
-                    }
-                    if let sel, let p = nearestDay(data.strain, \.day, to: sel), let v = p.strain {
-                        RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                            .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, one(v)) }
-                    }
-                }.chartYScale(domain: 0...21).chartXSelection(value: $sel).timeAxis().frame(height: 230).drawIn()
+            ChartCard(id: "strain.day", title: "Day strain (0–21)", accent: P.teal, canExpand: data.latest != nil) { expanded, sel in
+                dayStrainChart(data, expanded: expanded, sel: sel)
             }
-            Glass(title: "Calories burned", accent: P.orange) {
-                Chart {
-                    ForEach(data.strain) { p in
-                        if let v = p.calories { BarMark(x: .value("Day", parseDay(p.day)), y: .value("Cal", v)).foregroundStyle(P.orange.gradient) }
+            ChartCard(id: "strain.cal", title: "Calories burned", accent: P.orange, canExpand: data.latest != nil) { expanded, sel in
+                VStack(spacing: 14) {
+                    if expanded { chartStatStrip(data.strain.compactMap { $0.calories }, { grp($0) }, accent: P.orange) }
+                    Chart {
+                        ForEach(data.strain) { p in
+                            if let v = p.calories { BarMark(x: .value("Day", parseDay(p.day)), y: .value("Cal", v)).foregroundStyle(P.orange.gradient) }
+                        }
+                        if expanded, let s = sel.wrappedValue, let p = nearestDay(data.strain, \.day, to: s), let v = p.calories {
+                            RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, grp(v)) }
+                        }
                     }
-                    if let sel, let p = nearestDay(data.strain, \.day, to: sel), let v = p.calories {
-                        RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                            .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, grp(v)) }
-                    }
-                }.chartXSelection(value: $sel).timeAxis().frame(height: 190)
+                    .modifier(ExpandableAxis(expanded: expanded))
+                    .chartXSelectionIf(expanded, value: sel)
+                    .cursorScrub(sel, active: expanded)
+                    .frame(height: expanded ? nil : 190)
+                    .frame(maxHeight: expanded ? .infinity : nil)
+                }
             }
         }
     }
@@ -951,7 +1331,9 @@ struct ActivitiesSection: View {
                         }
                     }
                 }
-                Glass(title: "Total strain by sport", accent: P.teal) {
+                // Horizontal category bars (no Date axis) — expandable to taller bars, but no
+                // date crosshair/stat-strip (those are meaningless here).
+                ChartCard(id: "act.sport", title: "Total strain by sport", accent: P.teal, canExpand: !data.sports.isEmpty) { expanded, _ in
                     Chart(data.sports) { s in
                         BarMark(x: .value("Strain", s.total_strain ?? 0), y: .value("Sport", s.sport_name.capitalized))
                             .foregroundStyle(P.teal.gradient)
@@ -960,7 +1342,9 @@ struct ActivitiesSection: View {
                             }
                     }
                     .chartXScale(domain: 0...(max(data.sports.map { $0.total_strain ?? 0 }.max() ?? 1, 1) * 1.12))
-                    .frame(height: max(140, CGFloat(data.sports.count) * 30)).drawIn()
+                    .frame(height: expanded ? max(220, CGFloat(data.sports.count) * 52) : max(140, CGFloat(data.sports.count) * 30))
+                    .frame(maxHeight: expanded ? .infinity : nil)
+                    .applyIf(!expanded) { $0.drawIn() }
                 }
             }
             Glass(title: "Workouts", accent: P.violet) {

@@ -26,7 +26,7 @@ struct WhoopApp: App {
             WhoopMainView(data: data)
                 .environmentObject(appState)
                 .onAppear { watcher.start() }
-                .onDisappear { NSApp.setActivationPolicy(.accessory) }
+                .onDisappear { watcher.stop(); NSApp.setActivationPolicy(.accessory) }
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.automatic)
@@ -44,7 +44,11 @@ struct WhoopApp: App {
                 .task {
                     while !Task.isCancelled {
                         await data.load(days: 30)
-                        try? await Task.sleep(nanoseconds: 300 * 1_000_000_000)
+                        // Retry quickly while the engine is still warming up / unreachable so the
+                        // badge isn't blank for minutes on first launch; otherwise the normal
+                        // 5-min cadence (the engine syncs server-side on the same schedule).
+                        let delay: UInt64 = data.latest == nil ? 15 : 300
+                        try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
                     }
                 }
         }
@@ -139,11 +143,20 @@ final class SnapshotWatcher: ObservableObject {
     private var poll: Timer?
 
     func start() {
+        // Window re-opens call start() again — don't stack a new Timer each time; just refresh.
+        guard poll == nil else { reload(); return }
         reload()
         // Poll the local API every 5 min (the widget also self-refreshes on its timeline).
         poll = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             self?.reload()
         }
+    }
+
+    /// Stop polling when the window closes — no need to fetch + reload widget timelines while
+    /// the dashboard isn't even visible.
+    func stop() {
+        poll?.invalidate()
+        poll = nil
     }
 
     func reload() {

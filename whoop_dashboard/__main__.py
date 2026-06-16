@@ -82,7 +82,9 @@ def cmd_serve():
             try:
                 sync.sync()
                 snapshot.write_snapshot()
+                store.set_state("last_sync_error", "")   # clear on success
             except Exception as e:  # noqa: BLE001
+                store.set_state("last_sync_error", str(e))   # surfaced via /api/status
                 print(f"sync error: {e}", file=sys.stderr)
 
     tick()
@@ -149,7 +151,9 @@ def main(argv=None):
         except (AttributeError, ValueError):
             pass
     argv = argv if argv is not None else sys.argv[1:]
-    cmd = argv[0] if argv else "menubar"
+    # Default to the headless engine: the native SwiftUI app owns the menu bar now, so a bare
+    # `python -m whoop_dashboard` should run the API + auto-sync, not the legacy rumps menubar.
+    cmd = argv[0] if argv else "serve"
     fn = COMMANDS.get(cmd)
     if not fn:
         print(__doc__)
