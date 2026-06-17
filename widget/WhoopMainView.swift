@@ -543,9 +543,9 @@ struct ChartLightbox: View {
 // MARK: Chart helpers shared by inline + expanded rendering
 
 extension View {
-    @ViewBuilder func chartXSelectionIf(_ on: Bool, value: Binding<Date?>) -> some View {
-        if on { self.chartXSelection(value: value) } else { self }
-    }
+    // No-op now: the expanded charts are scrollable, and chartXSelection's click-drag would
+    // fight the scroll gesture. Selection is driven entirely by the hover crosshair (cursorScrub).
+    @ViewBuilder func chartXSelectionIf(_ on: Bool, value: Binding<Date?>) -> some View { self }
     @ViewBuilder func applyIf<T: View>(_ cond: Bool, _ transform: (Self) -> T) -> some View {
         if cond { transform(self) } else { self }
     }
@@ -581,22 +581,82 @@ struct CursorScrub: ViewModifier {
     @Binding var sel: Date?
     let active: Bool
     func body(content: Content) -> some View {
-        if active {
-            content.chartOverlay { proxy in
-                GeometryReader { geo in
-                    Rectangle().fill(Color.clear).contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            guard case .active(let pt) = phase, let plot = proxy.plotFrame else { sel = nil; return }
-                            let originX = geo[plot].origin.x
-                            sel = proxy.value(atX: pt.x - originX)   // never animate — must track 1:1
-                        }
-                }
-            }
-        } else { content }
+        // Built-in selection (click/drag to scrub) instead of a clear hover overlay — the overlay
+        // captured the drag and blocked horizontal scrolling. chartXSelection is designed to
+        // coexist with .chartScrollableAxes (two-finger scroll pans; click/drag scrubs).
+        if active { content.chartXSelection(value: $sel) }
+        else { content }
     }
 }
 extension View {
     func cursorScrub(_ sel: Binding<Date?>, active: Bool) -> some View { modifier(CursorScrub(sel: sel, active: active)) }
+}
+
+/// Makes an expanded chart horizontally scroll + zoom: two-finger scroll to pan, pinch or the
+/// on-chart +/- controls to zoom, "fit" to show everything. Opens framed on the most recent
+/// window (~30 days) so big ranges (90d / 6M / 1Y / All) are inspectable. Inactive inline.
+struct ScrollZoom: ViewModifier {
+    let active: Bool
+    let count: Int          // ~days of data (≈1 point/day) — sizes the initial visible window
+    let lastDay: String?    // most recent day, so we open showing the latest window
+    @State private var visible: Double = 30
+    @State private var started = false
+
+    private let day: Double = 86_400
+    private var maxDays: Double { Double(max(count, 14)) }
+    private func clamp(_ v: Double) -> Double { min(max(v, 7), maxDays) }
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .chartScrollableAxes(.horizontal)
+                .chartXVisibleDomain(length: visible * day)
+                .chartScrollPosition(initialX: initialX)
+                .overlay(alignment: .topTrailing) { controls }
+                .onAppear {
+                    guard !started else { return }
+                    started = true
+                    visible = min(maxDays, 30)
+                }
+        } else {
+            content
+        }
+    }
+
+    /// Open showing the most recent window (leading edge = last day − the initial window).
+    private var initialX: Date {
+        parseDay(lastDay).addingTimeInterval(-min(maxDays, 30) * day)
+    }
+
+    private func zoom(_ factor: Double) {
+        withAnimation(.easeOut(duration: 0.25)) { visible = clamp(visible * factor) }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 1) {
+            ctl("minus", "Zoom out") { zoom(1.7) }
+            ctl("plus", "Zoom in") { zoom(1 / 1.7) }
+            ctl("arrow.left.and.right", "Fit all") { zoom(maxDays / max(visible, 1)) }
+        }
+        .padding(3)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(P.stroke))
+        .padding(8)
+    }
+
+    private func ctl(_ icon: String, _ help: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                .frame(width: 26, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+extension View {
+    func scrollZoom(active: Bool, count: Int, lastDay: String?) -> some View {
+        modifier(ScrollZoom(active: active, count: count, lastDay: lastDay))
+    }
 }
 
 /// MIN / AVG / MAX / LATEST summary cells shown above an expanded chart.
@@ -647,6 +707,7 @@ func recoveryScoreChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) 
         .chartYScale(domain: 0...100)
         .modifier(ExpandableAxis(expanded: expanded))
         .cursorScrub(sel, active: expanded)
+        .scrollZoom(active: expanded, count: data.recovery.count, lastDay: data.recovery.last?.day)
         .frame(height: expanded ? nil : 230)
         .frame(maxHeight: expanded ? .infinity : nil)
         .applyIf(!expanded) { $0.drawIn() }
@@ -673,6 +734,7 @@ func sleepHoursChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> 
         }
         .modifier(ExpandableAxis(expanded: expanded))
         .cursorScrub(sel, active: expanded)
+        .scrollZoom(active: expanded, count: data.sleep.count, lastDay: data.sleep.last?.day)
         .frame(height: expanded ? nil : 230)
         .frame(maxHeight: expanded ? .infinity : nil)
         .applyIf(!expanded) { $0.drawIn() }
@@ -695,6 +757,7 @@ func dayStrainChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> s
         .chartYScale(domain: 0...21)
         .modifier(ExpandableAxis(expanded: expanded))
         .cursorScrub(sel, active: expanded)
+        .scrollZoom(active: expanded, count: data.strain.count, lastDay: data.strain.last?.day)
         .frame(height: expanded ? nil : 230)
         .frame(maxHeight: expanded ? .infinity : nil)
         .applyIf(!expanded) { $0.drawIn() }
@@ -1137,6 +1200,7 @@ struct RecoverySection: View {
                         .modifier(ExpandableAxis(expanded: expanded))
                         .chartXSelectionIf(expanded, value: sel)
                         .cursorScrub(sel, active: expanded)
+                        .scrollZoom(active: expanded, count: data.recovery.count, lastDay: data.recovery.last?.day)
                         .frame(height: expanded ? nil : 190)
                         .frame(maxHeight: expanded ? .infinity : nil)
                     }
@@ -1161,6 +1225,7 @@ struct RecoverySection: View {
                         .modifier(ExpandableAxis(expanded: expanded))
                         .chartXSelectionIf(expanded, value: sel)
                         .cursorScrub(sel, active: expanded)
+                        .scrollZoom(active: expanded, count: data.recovery.count, lastDay: data.recovery.last?.day)
                         .frame(height: expanded ? nil : 190)
                         .frame(maxHeight: expanded ? .infinity : nil)
                     }
@@ -1198,8 +1263,8 @@ struct SleepSection: View {
                     }
                     .chartForegroundStyleScale(domain: ["Deep", "REM", "Light", "Awake"], range: stageColors)
                     .modifier(ExpandableAxis(expanded: expanded))
-                    .chartXSelectionIf(expanded, value: sel)
                     .cursorScrub(sel, active: expanded)
+                    .scrollZoom(active: expanded, count: data.sleep.count, lastDay: data.sleep.last?.day)
                     .frame(height: expanded ? nil : 230)
                     .frame(maxHeight: expanded ? .infinity : nil)
                     .applyIf(!expanded) { $0.drawIn() }
@@ -1221,8 +1286,8 @@ struct SleepSection: View {
                     }.chartYScale(domain: 0...100).chartForegroundStyleScale(domain: ["Performance", "Efficiency"], range: [P.blue, P.green])
                         .chartLegend(.visible)
                         .modifier(ExpandableAxis(expanded: expanded))
-                        .chartXSelectionIf(expanded, value: sel)
                         .cursorScrub(sel, active: expanded)
+                        .scrollZoom(active: expanded, count: data.sleep.count, lastDay: data.sleep.last?.day)
                         .frame(height: expanded ? nil : 190)
                         .frame(maxHeight: expanded ? .infinity : nil)
                 }
@@ -1242,8 +1307,8 @@ struct SleepSection: View {
                     .chartForegroundStyleScale(domain: ["Slept", "Needed"], range: [P.blue, P.red.opacity(0.55)])
                     .chartLegend(.visible)
                     .modifier(ExpandableAxis(expanded: expanded))
-                    .chartXSelectionIf(expanded, value: sel)
                     .cursorScrub(sel, active: expanded)
+                    .scrollZoom(active: expanded, count: data.sleep.count, lastDay: data.sleep.last?.day)
                     .frame(height: expanded ? nil : 190)
                     .frame(maxHeight: expanded ? .infinity : nil)
                 }
@@ -1266,8 +1331,8 @@ struct SleepSection: View {
                         }
                     }
                     .modifier(ExpandableAxis(expanded: expanded))
-                    .chartXSelectionIf(expanded, value: sel)
                     .cursorScrub(sel, active: expanded)
+                    .scrollZoom(active: expanded, count: data.sleep.count, lastDay: data.sleep.last?.day)
                     .frame(height: expanded ? nil : 170)
                     .frame(maxHeight: expanded ? .infinity : nil)
                 }
@@ -1301,8 +1366,8 @@ struct StrainSection: View {
                         }
                     }
                     .modifier(ExpandableAxis(expanded: expanded))
-                    .chartXSelectionIf(expanded, value: sel)
                     .cursorScrub(sel, active: expanded)
+                    .scrollZoom(active: expanded, count: data.strain.count, lastDay: data.strain.last?.day)
                     .frame(height: expanded ? nil : 190)
                     .frame(maxHeight: expanded ? .infinity : nil)
                 }
