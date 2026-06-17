@@ -172,10 +172,11 @@ func recoveryColor(_ score: Int?) -> Color {
 
 // Accent tints used consistently across the widget and host app.
 enum WhoopTint {
-    static let sleep = Color(red: 0.45, green: 0.62, blue: 0.98)
-    static let strain = Color(red: 0.30, green: 0.78, blue: 0.86)
-    static let heart = Color(red: 0.97, green: 0.44, blue: 0.44)
-    static let food = Color(red: 0.98, green: 0.57, blue: 0.24)
+    // Kept in exact lockstep with the app palette `P` so the widget never drifts in color.
+    static let sleep = Color(red: 0.38, green: 0.65, blue: 0.98)   // == P.blue
+    static let strain = Color(red: 0.18, green: 0.83, blue: 0.74)  // == P.teal
+    static let heart = Color(red: 0.97, green: 0.44, blue: 0.44)   // == P.red
+    static let food = Color(red: 0.98, green: 0.57, blue: 0.24)    // == P.orange
 }
 
 // MARK: - Shared design system (used by app, menu popover AND the widget extension)

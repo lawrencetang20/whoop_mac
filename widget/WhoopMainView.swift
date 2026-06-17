@@ -443,7 +443,7 @@ struct ChartCard<Content: View>: View {
                         .foregroundStyle(.secondary)
                         .padding(6)
                         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
-                        .opacity(hover ? 0.9 : 0)
+                        .opacity(hover && canExpand ? 0.9 : 0)
                         .help("Expand")
                 }
         }
@@ -612,7 +612,7 @@ struct ScrollZoom: ViewModifier {
                 .chartScrollableAxes(.horizontal)
                 .chartXVisibleDomain(length: visible * day)
                 .chartScrollPosition(initialX: initialX)
-                .overlay(alignment: .topTrailing) { controls }
+                .overlay(alignment: .bottomTrailing) { controls }   // bottom corner — clear of the lightbox X button
                 .onAppear {
                     guard !started else { return }
                     started = true
@@ -701,7 +701,7 @@ func recoveryScoreChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) 
             if expanded, let s = sel.wrappedValue, let p = nearestDay(data.recovery, \.day, to: s), let v = p.recovery_score {
                 RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
                 PointMark(x: .value("Day", parseDay(p.day)), y: .value("Recovery", v)).foregroundStyle(recoveryColor(v)).symbolSize(70)
-                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v)%") }
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, "\(v)%") }
             }
         }
         .chartYScale(domain: 0...100)
@@ -729,7 +729,7 @@ func sleepHoursChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> 
             if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s), let v = p.hours {
                 RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
                 PointMark(x: .value("Day", parseDay(p.day)), y: .value("Hours", v)).foregroundStyle(P.blue).symbolSize(70)
-                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, fmtHrs(v)) }
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, fmtHrs(v)) }
             }
         }
         .modifier(ExpandableAxis(expanded: expanded))
@@ -751,7 +751,7 @@ func dayStrainChart(_ data: WhoopData, expanded: Bool, sel: Binding<Date?>) -> s
             }
             if expanded, let s = sel.wrappedValue, let p = nearestDay(data.strain, \.day, to: s), let v = p.strain {
                 RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, one(v)) }
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, one(v)) }
             }
         }
         .chartYScale(domain: 0...21)
@@ -784,7 +784,7 @@ struct ExpandableCard<Inline: View>: View {
                     .font(.system(size: 11, weight: .bold)).foregroundStyle(.secondary)
                     .padding(8)
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
-                    .opacity(hover ? 0.9 : 0)
+                    .opacity(hover && canExpand ? 0.9 : 0)
                     .help("Expand")
                     .padding(6)
             }
@@ -911,7 +911,7 @@ struct WhoopMainView: View {
                         if let c = st.counts {
                             Text("\(c.days ?? 0) days · \(c.workouts ?? 0) workouts").font(.system(size: 11)).foregroundStyle(.secondary)
                         }
-                        Text("Synced \(relativeSync(st.last_sync))").font(.system(size: 11)).foregroundStyle(.tertiary)
+                        Text("Synced \(relativeSync(st.last_sync))").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                     }.padding(.horizontal, 18).padding(.bottom, 12).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -1043,8 +1043,10 @@ struct HeroCard: View {
                     heroStat("Blood O₂", rec?.spo2_percentage.map { String(format: "%.0f", $0) } ?? "--", "%")
                     heroStat("Skin temp", rec?.skin_temp_celsius.map { String(format: "%.1f", $0) } ?? "--", "°C")
                 }
-                Sparkline(values: data.recovery.suffix(30).compactMap { $0.recovery_score.map(Double.init) }, color: zone)
-                    .frame(height: 38)
+                let spark = data.recovery.suffix(30).compactMap { $0.recovery_score.map(Double.init) }
+                if spark.count >= 2 {
+                    Sparkline(values: spark, color: zone).frame(height: 38)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1194,7 +1196,7 @@ struct RecoverySection: View {
                             if expanded, let s = sel.wrappedValue, let p = nearestDay(data.recovery, \.day, to: s), let v = p.hrv_rmssd_milli {
                                 RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
                                 PointMark(x: .value("Day", parseDay(p.day)), y: .value("HRV", v)).foregroundStyle(P.teal).symbolSize(70)
-                                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(Int(v.rounded())) ms") }
+                                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, "\(Int(v.rounded())) ms") }
                             }
                         }
                         .modifier(ExpandableAxis(expanded: expanded))
@@ -1219,7 +1221,7 @@ struct RecoverySection: View {
                             if expanded, let s = sel.wrappedValue, let p = nearestDay(data.recovery, \.day, to: s), let v = p.resting_heart_rate {
                                 RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.18))
                                 PointMark(x: .value("Day", parseDay(p.day)), y: .value("RHR", v)).foregroundStyle(P.red).symbolSize(70)
-                                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, "\(v) bpm") }
+                                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, "\(v) bpm") }
                             }
                         }
                         .modifier(ExpandableAxis(expanded: expanded))
@@ -1256,7 +1258,7 @@ struct SleepSection: View {
                         }
                         if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s) {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                                     chartTip(p.day, fmtHrs((p.deep_hours ?? 0) + (p.rem_hours ?? 0) + (p.light_hours ?? 0) + (p.awake_hours ?? 0)))
                                 }
                         }
@@ -1279,7 +1281,7 @@ struct SleepSection: View {
                         }
                         if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s) {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                                     chartTip(p.day, "Perf \(p.performance.map { "\(Int($0.rounded()))%" } ?? "--") · Eff \(p.efficiency.map { "\(Int($0.rounded()))%" } ?? "--")")
                                 }
                         }
@@ -1299,7 +1301,7 @@ struct SleepSection: View {
                         }
                         if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s) {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                                     chartTip(p.day, "Slept \(fmtHrs(p.hours)) · Need \(fmtHrs(p.need_hours))")
                                 }
                         }
@@ -1327,7 +1329,7 @@ struct SleepSection: View {
                         if expanded, let s = sel.wrappedValue, let p = nearestDay(data.sleep, \.day, to: s), let v = p.respiratory_rate {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
                             PointMark(x: .value("Day", parseDay(p.day)), y: .value("RR", v)).foregroundStyle(P.violet).symbolSize(70)
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, String(format: "%.1f rpm", v)) }
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, String(format: "%.1f rpm", v)) }
                         }
                     }
                     .modifier(ExpandableAxis(expanded: expanded))
@@ -1362,7 +1364,7 @@ struct StrainSection: View {
                         }
                         if expanded, let s = sel.wrappedValue, let p = nearestDay(data.strain, \.day, to: s), let v = p.calories {
                             RuleMark(x: .value("Day", parseDay(p.day))).foregroundStyle(.white.opacity(0.25))
-                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) { chartTip(p.day, grp(v)) }
+                                .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) { chartTip(p.day, grp(v)) }
                         }
                     }
                     .modifier(ExpandableAxis(expanded: expanded))

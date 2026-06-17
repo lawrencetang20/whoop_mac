@@ -170,7 +170,7 @@ struct LargeWidgetView: View {
                 }
             }
 
-            RecoveryRing(score: snap.recovery?.score, lineWidth: 16, valueFontSize: 52, showCaption: true)
+            RecoveryRing(score: snap.recovery?.score, lineWidth: 14, valueFontSize: 48, showCaption: true)
                 .frame(width: 150, height: 150)
                 .frame(maxHeight: .infinity)
 

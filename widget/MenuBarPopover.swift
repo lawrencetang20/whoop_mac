@@ -261,7 +261,7 @@ struct MenuBarPopover: View {
         return PillarRow(
             icon: "bed.double.fill", label: "SLEEP", accent: P.blue,
             value: slp?.hours, render: fmtHrs, unit: "",
-            delta: dD(slp?.hours, slpP?.hours).map { $0 * 60 }, deltaDecimals: 0, deltaUnit: "m",
+            delta: dD(slp?.hours, slpP?.hours), deltaDecimals: 1, deltaUnit: "h",
             sparkValues: data.sleep.suffix(30).compactMap { $0.hours },
             onTap: { open(.sleep) }
         ) {
@@ -463,7 +463,7 @@ private struct WorkoutStrip: View {
                 Text(sportEmoji(workout.sport_name)).font(.system(size: 18))
                 VStack(alignment: .leading, spacing: 1) {
                     Text("LAST WORKOUT").font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
-                    Text((workout.sport_name ?? "Activity").capitalized).font(.system(size: 12, weight: .bold)).lineLimit(1)
+                    Text((workout.sport_name ?? "Activity").capitalized).font(.system(size: 12, weight: .bold)).lineLimit(1).minimumScaleFactor(0.75)
                 }
                 Spacer(minLength: 6)
                 miniStat("STRAIN", one(workout.strain))
