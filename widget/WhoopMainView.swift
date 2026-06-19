@@ -215,15 +215,12 @@ struct CountUp: View {
     var render: (Double?) -> String
     @State private var shown: Double = 0
     var body: some View {
-        CountingNumber(value: value == nil ? 0 : shown,
-                       render: { value == nil ? render(nil) : render($0) })
-            .onAppear { start() }
-            .onChange(of: value) { _, _ in start() }
-    }
-    private func start() {
-        guard let v = value else { return }
-        shown = 0
-        withAnimation(Motion.settle) { shown = v }
+        CountingNumber(value: shown, render: { value == nil ? render(nil) : render($0) })
+            // Entrance: count up from 0. On a later change (e.g. stepping days / a refresh):
+            // interpolate from the CURRENT value to the new one — no flash back to 0 — and use the
+            // same quick settle as the ring so digits and arc move together.
+            .onAppear { shown = 0; if let v = value { withAnimation(Motion.settle) { shown = v } } }
+            .onChange(of: value) { _, v in withAnimation(Motion.settleQuick) { shown = v ?? 0 } }
     }
 }
 

@@ -88,17 +88,80 @@ struct MenuBarPopover: View {
     @State private var appeared = false   // drives the entrance cascade (re-fires each open)
     @State private var visible = false    // gates repeatForever animations to on-screen only
     @State private var openHover = false  // hover state for the primary "Open WHOOP" pill
+    @State private var selectedDay: String?   // the day being viewed; nil = default (the badge's day)
 
     /// True only while the popover is actually on-screen. `controlActiveState` flips to .inactive
     /// when AppKit orders the panel out — reliable even when .onDisappear doesn't fire in
     /// MenuBarExtra(.window) — so repeatForever animations never run off-screen between opens.
     private var active: Bool { visible && controlActive != .inactive }
 
+    // MARK: Per-day model — the popover browses one day at a time, sourced from the loaded series.
+
+    /// Distinct days (ascending) that have any data — the days you can step through.
+    private var navDays: [String] {
+        var set = Set<String>()
+        for p in data.recovery { set.insert(p.day) }
+        for p in data.sleep { set.insert(p.day) }
+        for p in data.strain { set.insert(p.day) }
+        for w in data.workouts { if let d = w.day { set.insert(d) } }
+        return set.sorted()
+    }
+
+    /// The day to display: the user's pick if still valid, else the badge's day (the most recent
+    /// SCORED recovery, == data.latest), else the most recent day with any data. Anchoring the
+    /// default to data.latest keeps the popover's opening recovery in agreement with the menu-bar
+    /// badge even when today's cycle exists but today's recovery hasn't been scored yet.
+    private func effectiveDay(_ days: [String]) -> String? {
+        if let s = selectedDay, days.contains(s) { return s }
+        if let l = data.latest?.day, days.contains(l) { return l }
+        return days.last
+    }
+
+    /// Step the selected day by ±1 within the available days.
+    private func step(_ delta: Int) {
+        let days = navDays
+        guard let cur = effectiveDay(days), let i = days.firstIndex(of: cur) else { return }
+        let j = min(max(i + delta, 0), days.count - 1)
+        withAnimation(.easeOut(duration: 0.25)) { selectedDay = days[j] }
+    }
+
+    /// The selected day's point + the immediately-preceding record in that series (for day-over-day deltas).
+    private func recAt(_ day: String?) -> (RecoveryPoint?, RecoveryPoint?) {
+        guard let day, let i = data.recovery.firstIndex(where: { $0.day == day }) else { return (nil, nil) }
+        return (data.recovery[i], i > 0 ? data.recovery[i - 1] : nil)
+    }
+    private func slpAt(_ day: String?) -> (SleepPoint?, SleepPoint?) {
+        guard let day, let i = data.sleep.firstIndex(where: { $0.day == day }) else { return (nil, nil) }
+        return (data.sleep[i], i > 0 ? data.sleep[i - 1] : nil)
+    }
+    private func strAt(_ day: String?) -> (StrainPoint?, StrainPoint?) {
+        guard let day, let i = data.strain.firstIndex(where: { $0.day == day }) else { return (nil, nil) }
+        return (data.strain[i], i > 0 ? data.strain[i - 1] : nil)
+    }
+
+    /// "Today" / "Yesterday" / "Wed, Jun 18" for the day stepper.
+    private func dayLabel(_ day: String?) -> String {
+        guard let day else { return "—" }
+        let date = parseDay(day)
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; f.locale = .current
+        return f.string(from: date)
+    }
+
     var body: some View {
-        let rec = data.latest?.recovery
-        let recP = data.latest?.recovery_prev
+        let days = navDays
+        let selDay = effectiveDay(days)
+        let idx = selDay.flatMap { days.firstIndex(of: $0) }
+        let canBack = (idx ?? 0) > 0
+        let canForward = idx.map { $0 < days.count - 1 } ?? false
+        let (rec, recP) = recAt(selDay)
+        let (slp, slpP) = slpAt(selDay)
+        let (str, strP) = strAt(selDay)
         let score = rec?.recovery_score
         let zone = recoveryColor(score)
+        let dayWorkouts = data.workouts.filter { $0.day != nil && $0.day == selDay }
 
         // Edge states: nothing loaded yet. Offline (engine unreachable) gets a calm card;
         // a genuine no-error cold load gets a redacted shimmer that resolves into real data.
@@ -112,20 +175,25 @@ struct MenuBarPopover: View {
                 coldStateCard().reveal(1, appeared)
             } else {
                 Group {
-                    hero(rec: rec, recP: recP, score: score, zone: zone).reveal(1, appeared)
+                    hero(rec: rec, recP: recP, score: score, zone: zone, day: selDay, canBack: canBack, canForward: canForward).reveal(1, appeared)
 
                     VStack(spacing: 8) {
                         recoveryPillar(rec: rec, recP: recP, zone: zone).reveal(2, appeared)
-                        sleepPillar().reveal(3, appeared)
-                        strainPillar().reveal(4, appeared)
+                        sleepPillar(slp: slp, slpP: slpP).reveal(3, appeared)
+                        strainPillar(str: str, strP: strP).reveal(4, appeared)
                     }
                 }
                 .redacted(reason: loadingCold ? .placeholder : [])
                 .shimmering(active: loadingCold)
                 .animation(.easeOut(duration: 0.3), value: loadingCold)
 
-                if let w = data.workouts.first {
-                    WorkoutStrip(workout: w) { open(.activities) }.reveal(5, appeared)
+                // The selected day's workout(s): nothing if there were none; a single row, or an
+                // expandable list when there's more than one.
+                if !dayWorkouts.isEmpty {
+                    WorkoutsSection(workouts: dayWorkouts) { open(.activities) }
+                        .id(selDay ?? "")   // fresh identity per day so the expand state resets cleanly
+                        .reveal(5, appeared)
+                        .transition(.opacity)
                 }
 
                 // Warm failure only (data present but the last sync failed) — a quiet inline note.
@@ -145,7 +213,7 @@ struct MenuBarPopover: View {
         .background(P.bg)
         .environment(\.colorScheme, .dark)
         .task { await data.load(days: 30) }   // always refetch on open — never show a stale panel
-        .onAppear { visible = true; appeared = false; withAnimation { appeared = true } }
+        .onAppear { visible = true; appeared = false; selectedDay = nil; withAnimation { appeared = true } }
         .onDisappear { visible = false; appeared = false }
     }
 
@@ -206,8 +274,10 @@ struct MenuBarPopover: View {
     // MARK: Hero — ring + greeting + day-over-day delta + status line
 
     @ViewBuilder
-    private func hero(rec: LatestStats.Rec?, recP: LatestStats.Rec?, score: Int?, zone: Color) -> some View {
+    private func hero(rec: RecoveryPoint?, recP: RecoveryPoint?, score: Int?, zone: Color,
+                      day: String?, canBack: Bool, canForward: Bool) -> some View {
         let heroDelta = dII(score, recP?.recovery_score)
+        let isToday = day.map { Calendar.current.isDateInToday(parseDay($0)) } ?? false
         HStack(spacing: 14) {
             // No "RECOVERY" caption here — at 78pt it crowds the ring; the header zone pill,
             // the status line, and the menu-bar badge already say this is recovery.
@@ -217,11 +287,13 @@ struct MenuBarPopover: View {
                     if let s = score, s >= 67, active { GreenCelebration(color: zone).frame(width: 78, height: 78) }
                 }
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Text("\(greeting())\(name)")
+                HStack(spacing: 5) {
+                    dayChevron("chevron.left", enabled: canBack) { step(-1) }
+                    Text(isToday ? "\(greeting())\(name)" : dayLabel(day))
                         .font(.system(size: 13, weight: .bold))
-                        .lineLimit(1).minimumScaleFactor(0.85)
-                    Spacer(minLength: 0)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    dayChevron("chevron.right", enabled: canForward) { step(1) }
+                    Spacer(minLength: 4)
                     TrendChip(delta: heroDelta)
                 }
                 Text(recoveryStatus(score))
@@ -231,9 +303,18 @@ struct MenuBarPopover: View {
         }
     }
 
+    private func dayChevron(_ icon: String, enabled: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Image(systemName: icon).font(.system(size: 10, weight: .bold))
+                .foregroundStyle(enabled ? Color.secondary : Color.secondary.opacity(0.25))
+                .frame(width: 22, height: 22).contentShape(Rectangle())   // comfortable hit target
+        }
+        .buttonStyle(.plain).disabled(!enabled).help(icon.contains("left") ? "Previous day" : "Next day")
+    }
+
     // MARK: Pillars
 
-    private func recoveryPillar(rec: LatestStats.Rec?, recP: LatestStats.Rec?, zone: Color) -> some View {
+    private func recoveryPillar(rec: RecoveryPoint?, recP: RecoveryPoint?, zone: Color) -> some View {
         let rhr = rec?.resting_heart_rate
         let rhrDelta = dII(rhr, recP?.resting_heart_rate)
         return PillarRow(
@@ -254,9 +335,7 @@ struct MenuBarPopover: View {
         }
     }
 
-    private func sleepPillar() -> some View {
-        let slp = data.latest?.sleep
-        let slpP = data.latest?.sleep_prev
+    private func sleepPillar(slp: SleepPoint?, slpP: SleepPoint?) -> some View {
         let frac = (slp?.hours).flatMap { h in (slp?.need_hours).map { n in n > 0 ? h / n : 0 } }
         return PillarRow(
             icon: "bed.double.fill", label: "SLEEP", accent: P.blue,
@@ -274,9 +353,7 @@ struct MenuBarPopover: View {
         }
     }
 
-    private func strainPillar() -> some View {
-        let str = data.latest?.strain
-        let strP = data.latest?.strain_prev
+    private func strainPillar(str: StrainPoint?, strP: StrainPoint?) -> some View {
         return PillarRow(
             icon: "bolt.fill", label: "DAY STRAIN", accent: P.teal,   // teal matches the app's strain card/chart
             value: str?.strain, render: one, unit: "/21",
@@ -454,6 +531,7 @@ private struct PillarRow<Trailing: View>: View {
 
 private struct WorkoutStrip: View {
     let workout: WorkoutRow
+    var label: String = "WORKOUT"
     var onTap: () -> Void
     @State private var hover = false
 
@@ -462,7 +540,7 @@ private struct WorkoutStrip: View {
             HStack(spacing: 10) {
                 Text(sportEmoji(workout.sport_name)).font(.system(size: 18))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("LAST WORKOUT").font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
+                    Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
                     Text((workout.sport_name ?? "Activity").capitalized).font(.system(size: 12, weight: .bold)).lineLimit(1).minimumScaleFactor(0.75)
                 }
                 Spacer(minLength: 6)
@@ -486,6 +564,74 @@ private struct WorkoutStrip: View {
         VStack(spacing: 1) {
             Text(value).font(.system(size: 11.5, weight: .semibold, design: .rounded)).monospacedDigit()
             Text(label).font(.system(size: 8.5, weight: .semibold)).tracking(0.5).foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - The selected day's workout(s) — a single strip, or an expandable list for multiple
+
+private struct WorkoutsSection: View {
+    let workouts: [WorkoutRow]
+    var onOpen: () -> Void
+    @State private var expanded = false
+
+    var body: some View {
+        if workouts.count <= 1, let w = workouts.first {
+            WorkoutStrip(workout: w, onTap: onOpen)
+        } else {
+            VStack(spacing: 0) {
+                Button { withAnimation(.easeOut(duration: 0.22)) { expanded.toggle() } } label: { headerRow }
+                    .buttonStyle(PressableButtonStyle())
+                if expanded {
+                    VStack(spacing: 0) {
+                        ForEach(Array(workouts.enumerated()), id: \.offset) { _, w in
+                            Divider().overlay(P.violet.opacity(0.18))
+                            detailRow(w)
+                        }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .background(P.violet.opacity(0.08))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.violet.opacity(0.22)))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "figure.run").font(.system(size: 13, weight: .semibold)).foregroundStyle(P.violet)
+                .frame(width: 26, height: 26).background(P.violet.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(workouts.count) WORKOUTS").font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
+                Text(workouts.prefix(6).map { sportEmoji($0.sport_name) }.joined(separator: " ")).font(.system(size: 12)).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                .rotationEffect(.degrees(expanded ? 180 : 0))
+        }
+        .padding(.vertical, 8).padding(.horizontal, 11)
+        .contentShape(Rectangle())
+    }
+
+    private func detailRow(_ w: WorkoutRow) -> some View {
+        HStack(spacing: 10) {
+            Text(sportEmoji(w.sport_name)).font(.system(size: 15))
+            Text((w.sport_name ?? "Activity").capitalized).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
+            Spacer(minLength: 6)
+            ministat("STRAIN", one(w.strain))
+            ministat("HR", intStr(w.average_heart_rate))
+            if let d = w.distance_meter, d > 0 { ministat("KM", String(format: "%.2f", d / 1000)) }
+            else { ministat("CAL", grp(w.calories)) }
+        }
+        .padding(.vertical, 7).padding(.horizontal, 11)
+    }
+
+    private func ministat(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 1) {
+            Text(value).font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(label).font(.system(size: 7.5, weight: .semibold)).tracking(0.4).foregroundStyle(.secondary)
         }
     }
 }

@@ -20,6 +20,17 @@ import sys
 from . import auth, config, snapshot, store, sync
 
 
+def _hours_since(iso: str) -> float:
+    """Hours since an ISO8601 'YYYY-MM-DDThh:mm:ss.000Z' timestamp (huge if unparseable, so we
+    treat an unknown/missing backfill time as 'very old' and re-run it)."""
+    from datetime import datetime, timezone
+    try:
+        t = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return 1e9
+    return (datetime.now(timezone.utc) - t).total_seconds() / 3600.0
+
+
 def _require_creds():
     if not config.credentials_present():
         print(
@@ -78,14 +89,22 @@ def cmd_serve():
     print(f"WHOOP engine serving http://localhost:{config.DASHBOARD_PORT} (headless)")
 
     def tick():
-        if auth.is_authorized():
-            try:
-                sync.sync()
-                snapshot.write_snapshot()
-                store.set_state("last_sync_error", "")   # clear on success
-            except Exception as e:  # noqa: BLE001
-                store.set_state("last_sync_error", str(e))   # surfaced via /api/status
-                print(f"sync error: {e}", file=sys.stderr)
+        if not auth.is_authorized():
+            return
+        try:
+            # Re-run a FULL backfill about once a day so anything WHOOP scored late, or that a
+            # sync ever dropped, gets filled into the history — otherwise just the fast recent
+            # window every 5 min. (Re-fetches are idempotent upserts, so this only adds/repairs.)
+            last_bf = store.get_state("last_backfill")
+            if last_bf is None or _hours_since(last_bf) >= 24:
+                sync.backfill()
+            else:
+                sync.sync_recent()
+            snapshot.write_snapshot()
+            store.set_state("last_sync_error", "")   # clear on success
+        except Exception as e:  # noqa: BLE001
+            store.set_state("last_sync_error", str(e))   # surfaced via /api/status
+            print(f"sync error: {e}", file=sys.stderr)
 
     tick()
     while True:
