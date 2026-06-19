@@ -29,7 +29,7 @@ struct WhoopApp: App {
                 .onDisappear { watcher.stop(); NSApp.setActivationPolicy(.accessory) }
         }
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.automatic)
+        .windowResizability(.contentMinSize)   // freely resizable above the content's min size
         .defaultSize(width: 1100, height: 740)
 
         // The menu-bar item: a recovery badge that drops a custom SwiftUI popover.
