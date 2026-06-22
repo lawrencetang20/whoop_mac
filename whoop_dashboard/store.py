@@ -462,20 +462,29 @@ def recovery_series(start: str, end: str) -> list[dict]:
 def strain_series(start: str, end: str) -> list[dict]:
     """Day strain / heart rate / calories per local day from cycles.
 
-    Some calendar days contain two physiological cycles; we keep the higher-strain
-    one so each day has a single representative point (no duplicate x on the chart).
+    A cycle's strain is attributed to the day you WOKE UP during it (its recovery's sleep
+    local_day), matching recovery_series. The current wake-to-wake cycle often starts late
+    the prior evening, so its own local_day trails the day you'd call "today" by one — using
+    the wake day puts today's in-progress strain on today (and avoids two cycles colliding on
+    one local_day, which previously hid it). Falls back to the cycle's own local_day when
+    there's no recovery/sleep link. One representative (highest-strain) cycle per day.
     """
     return _rows(
         """
         SELECT day, strain, average_heart_rate, max_heart_rate, calories
         FROM (
-            SELECT local_day AS day, strain, average_heart_rate, max_heart_rate,
-                   ROUND(kilojoule * ?, 0) AS calories,
-                   ROW_NUMBER() OVER (PARTITION BY local_day ORDER BY strain DESC) AS rn
-            FROM cycles
-            WHERE score_state = 'SCORED' AND local_day BETWEEN ? AND ?
+            SELECT COALESCE(s.local_day, c.local_day) AS day,
+                   c.strain, c.average_heart_rate, c.max_heart_rate,
+                   ROUND(c.kilojoule * ?, 0) AS calories,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY COALESCE(s.local_day, c.local_day) ORDER BY c.strain DESC
+                   ) AS rn
+            FROM cycles c
+            LEFT JOIN recoveries r ON r.cycle_id = c.id
+            LEFT JOIN sleeps s ON s.id = r.sleep_id
+            WHERE c.score_state = 'SCORED'
         )
-        WHERE rn = 1
+        WHERE rn = 1 AND day BETWEEN ? AND ?
         ORDER BY day
         """,
         (KJ_TO_KCAL, start, end),
@@ -592,10 +601,12 @@ def _strain_for_cycle(cycle_id) -> list:
         return []
     return _rows(
         """
-        SELECT local_day AS day, strain, average_heart_rate, max_heart_rate,
-               ROUND(kilojoule * ?, 0) AS calories
-        FROM cycles
-        WHERE id = ? AND score_state = 'SCORED'
+        SELECT COALESCE(s.local_day, c.local_day) AS day, c.strain,
+               c.average_heart_rate, c.max_heart_rate, ROUND(c.kilojoule * ?, 0) AS calories
+        FROM cycles c
+        LEFT JOIN recoveries r ON r.cycle_id = c.id
+        LEFT JOIN sleeps s ON s.id = r.sleep_id
+        WHERE c.id = ? AND c.score_state = 'SCORED'
         """,
         (KJ_TO_KCAL, cycle_id),
     )
@@ -739,11 +750,16 @@ def summary_stats(start: str, end: str) -> dict:
         """
         SELECT ROUND(AVG(strain), 1) AS avg_strain, MAX(strain) AS max_strain
         FROM (
-            SELECT strain, ROW_NUMBER() OVER (PARTITION BY local_day ORDER BY strain DESC) AS rn
-            FROM cycles
-            WHERE score_state = 'SCORED' AND local_day BETWEEN ? AND ?
+            SELECT c.strain AS strain, COALESCE(s.local_day, c.local_day) AS day,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY COALESCE(s.local_day, c.local_day) ORDER BY c.strain DESC
+                   ) AS rn
+            FROM cycles c
+            LEFT JOIN recoveries r ON r.cycle_id = c.id
+            LEFT JOIN sleeps s ON s.id = r.sleep_id
+            WHERE c.score_state = 'SCORED'
         )
-        WHERE rn = 1
+        WHERE rn = 1 AND day BETWEEN ? AND ?
         """,
         (start, end),
     )

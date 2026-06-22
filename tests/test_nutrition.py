@@ -40,8 +40,9 @@ TODAY = datetime.date.today().isoformat()
 
 def local_client() -> TestClient:
     """A client whose peer address is 127.0.0.1, so it bypasses the token gate
-    exactly like the Mac's own browser does."""
-    return TestClient(dashboard.app, client=("127.0.0.1", 5000))
+    exactly like the Mac's own browser does. base_url uses an allowed host so the
+    TrustedHost (DNS-rebinding) middleware doesn't reject it."""
+    return TestClient(dashboard.app, base_url="http://127.0.0.1", client=("127.0.0.1", 5000))
 
 
 class NutritionTests(unittest.TestCase):
@@ -129,11 +130,13 @@ class NutritionTests(unittest.TestCase):
         raw.decode("utf-8")  # ...and is valid UTF-8
         r = self.c.get("/")
         self.assertEqual(r.status_code, 200)
-        self.assertIn('data-tab="nutrition"', r.text)
+        self.assertIn('data-tab="strain"', r.text)  # the dashboard renders its tab nav
         self.assertIn("app.js?v=", r.text)  # cache-busting applied
 
     def test_token_gate(self):
-        remote = TestClient(dashboard.app)  # non-localhost peer -> must present the token
+        # Non-localhost peer (default client host) but an allowed Host header, so it reaches the
+        # token gate instead of being rejected by TrustedHost — must present the token.
+        remote = TestClient(dashboard.app, base_url="http://127.0.0.1")
         self.assertEqual(remote.get("/api/status").status_code, 401)
         self.assertEqual(remote.get("/api/status?token=wrong").status_code, 401)
         self.assertEqual(remote.get("/api/status?token=testtoken").status_code, 200)
