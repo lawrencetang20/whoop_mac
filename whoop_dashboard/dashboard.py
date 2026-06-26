@@ -196,6 +196,12 @@ def sleep(days: int = Query(90, ge=1, le=3650)):
     return store.sleep_series(start, end)
 
 
+@app.get("/api/naps")
+def naps(days: int = Query(90, ge=1, le=3650)):
+    start, end = _range(days)
+    return store.naps_list(start, end)
+
+
 @app.get("/api/strain")
 def strain(days: int = Query(90, ge=1, le=3650)):
     start, end = _range(days)

@@ -517,6 +517,22 @@ def sleep_series(start: str, end: str) -> list[dict]:
     )
 
 
+def naps_list(start: str, end: str) -> list[dict]:
+    """Naps (nap = 1) per local day — kept separate from the main night sleep, which all the
+    other sleep queries (nap = 0) intentionally exclude. A day can have more than one."""
+    return _rows(
+        """
+        SELECT local_day AS day, start, "end" AS end,
+               ROUND(total_sleep_time_milli / 3600000.0, 2) AS hours,
+               sleep_performance_percentage AS performance
+        FROM sleeps
+        WHERE nap = 1 AND score_state = 'SCORED' AND local_day BETWEEN ? AND ?
+        ORDER BY local_day, start
+        """,
+        (start, end),
+    )
+
+
 def workouts_list(start: str, end: str) -> list[dict]:
     return _rows(
         """

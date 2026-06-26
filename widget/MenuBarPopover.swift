@@ -104,6 +104,7 @@ struct MenuBarPopover: View {
         for p in data.sleep { set.insert(p.day) }
         for p in data.strain { set.insert(p.day) }
         for w in data.workouts { if let d = w.day { set.insert(d) } }
+        for n in data.naps { set.insert(n.day) }
         return set.sorted()
     }
 
@@ -162,6 +163,7 @@ struct MenuBarPopover: View {
         let score = rec?.recovery_score
         let zone = recoveryColor(score)
         let dayWorkouts = data.workouts.filter { $0.day != nil && $0.day == selDay }
+        let dayNaps = data.naps.filter { $0.day == selDay }
 
         // Edge states: nothing loaded yet. Offline (engine unreachable) gets a calm card;
         // a genuine no-error cold load gets a redacted shimmer that resolves into real data.
@@ -186,6 +188,11 @@ struct MenuBarPopover: View {
                 .redacted(reason: loadingCold ? .placeholder : [])
                 .shimmering(active: loadingCold)
                 .animation(.easeOut(duration: 0.3), value: loadingCold)
+
+                // A nap on the selected day (WHOOP keeps naps separate from the night's sleep).
+                if !dayNaps.isEmpty {
+                    NapRow(naps: dayNaps) { open(.sleep) }.reveal(5, appeared).transition(.opacity)
+                }
 
                 // The selected day's workout(s): nothing if there were none; a single row, or an
                 // expandable list when there's more than one.
@@ -633,6 +640,48 @@ private struct WorkoutsSection: View {
             Text(value).font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
             Text(label).font(.system(size: 7.5, weight: .semibold)).tracking(0.4).foregroundStyle(.secondary)
         }
+    }
+}
+
+// MARK: - The selected day's nap(s) — separate from the night's sleep
+
+private struct NapRow: View {
+    let naps: [NapPoint]
+    var onTap: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        let total = naps.compactMap { $0.hours }.reduce(0, +)
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: "moon.zzz.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(P.blue)
+                    .frame(width: 26, height: 26).background(P.blue.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(naps.count > 1 ? "\(naps.count) NAPS" : "NAP")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(.secondary)
+                    Text(fmtHrs(total)).font(.system(size: 13, weight: .bold))
+                }
+                Spacer(minLength: 6)
+                if naps.count == 1, let t = napTime(naps.first?.start) {
+                    Text(t).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            .padding(.vertical, 8).padding(.horizontal, 11)
+            .frame(maxWidth: .infinity)
+            .background(P.blue.opacity(hover ? 0.13 : 0.07))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(P.blue.opacity(hover ? 0.4 : 0.20)))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .scaleEffect(hover ? 1.012 : 1)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .onHover { h in withAnimation(.easeOut(duration: 0.18)) { hover = h } }
+    }
+
+    /// "6:07 PM" — when the nap started, in local time.
+    private func napTime(_ iso: String?) -> String? {
+        guard let d = parseISODate(iso) else { return nil }
+        let f = DateFormatter(); f.dateFormat = "h:mm a"; f.locale = .current
+        return f.string(from: d)
     }
 }
 

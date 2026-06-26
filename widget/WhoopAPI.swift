@@ -53,6 +53,16 @@ struct WorkoutRow: Codable, Identifiable {
     var distance_meter: Double?
 }
 
+// A nap (WHOOP `nap = 1`), kept separate from the main night sleep.
+struct NapPoint: Codable, Identifiable {
+    var day: String
+    var start: String?
+    var end: String?
+    var hours: Double?
+    var performance: Double?
+    var id: String { (start ?? "") + day }
+}
+
 struct SportRollup: Codable, Identifiable {
     var sport_name: String
     var count: Int
@@ -183,6 +193,7 @@ final class WhoopData: ObservableObject {
     @Published var sleep: [SleepPoint] = []
     @Published var strain: [StrainPoint] = []
     @Published var workouts: [WorkoutRow] = []
+    @Published var naps: [NapPoint] = []
     @Published var sports: [SportRollup] = []
     @Published var nutrition: NutritionResponse?
     @Published var energy: [EnergyPoint] = []
@@ -211,6 +222,7 @@ final class WhoopData: ObservableObject {
             async let sl = get("/api/sleep?days=\(days)", [SleepPoint].self)
             async let sn = get("/api/strain?days=\(days)", [StrainPoint].self)
             async let wk = get("/api/workouts?days=\(days)", [WorkoutRow].self)
+            async let nap = get("/api/naps?days=\(days)", [NapPoint].self)
             async let sp = get("/api/sports?days=\(days)", [SportRollup].self)
             async let nu = get("/api/nutrition?days=\(days)", NutritionResponse.self)
             async let en = get("/api/energy?days=\(days)", [EnergyPoint].self)
@@ -222,8 +234,9 @@ final class WhoopData: ObservableObject {
             strain = try await sn
             workouts = try await wk
             sports = try await sp
-            // Nutrition routes are newer; tolerate an older backend that lacks them
+            // Naps + nutrition routes are newer; tolerate an older backend that lacks them
             // (best-effort) rather than failing the whole dashboard load.
+            naps = (try? await nap) ?? []
             nutrition = try? await nu
             energy = (try? await en) ?? []
         } catch {
