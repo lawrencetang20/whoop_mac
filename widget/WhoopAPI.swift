@@ -309,15 +309,18 @@ final class WhoopData: ObservableObject {
 
 // MARK: - Helpers
 
-private let dayFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    f.timeZone = .current
-    return f
-}()
-
+/// Turn a backend "yyyy-MM-dd" day-string into local midnight of that day.
+///
+/// We deliberately build the date from `Calendar.current` on every call rather than caching a
+/// DateFormatter: `Calendar.current` is re-snapshotted at each access, so it always reflects the
+/// machine's CURRENT timezone. A cached formatter would freeze the launch-time zone, so after you
+/// travel (e.g. Eastern -> Pacific) every day would parse 3h early and "today" would read
+/// "Yesterday". This keeps day labels and chart axes correct across timezone changes, no relaunch.
 func parseDay(_ s: String?) -> Date {
-    guard let s, let d = dayFormatter.date(from: s) else { return Date() }
-    return d
+    guard let s else { return Date() }
+    let parts = s.split(separator: "-").compactMap { Int($0) }
+    guard parts.count == 3 else { return Date() }
+    var c = DateComponents()
+    c.year = parts[0]; c.month = parts[1]; c.day = parts[2]
+    return Calendar.current.date(from: c) ?? Date()
 }
