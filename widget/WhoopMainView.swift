@@ -390,6 +390,19 @@ func emptyState(_ icon: String, _ text: String, accent: Color) -> some View {
     .frame(maxWidth: .infinity).padding(.vertical, 24)
 }
 
+/// "Thu, Jun 25" for a yyyy-MM-dd day string.
+func napDate(_ day: String?) -> String {
+    guard let day else { return "—" }
+    let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; f.locale = .current
+    return f.string(from: parseDay(day))
+}
+/// "6:07 PM" for an ISO timestamp, in local time.
+func napClock(_ iso: String?) -> String? {
+    guard let d = parseISODate(iso) else { return nil }
+    let f = DateFormatter(); f.dateFormat = "h:mm a"; f.locale = .current
+    return f.string(from: d)
+}
+
 // Tiny inline trend chart for the hero cards.
 struct Sparkline: View {
     let values: [Double]
@@ -1094,6 +1107,7 @@ struct OverviewSection: View {
         let slpP = data.latest?.sleep_prev, strP = data.latest?.strain_prev
         let sum = data.summary
         let ins = computeInsights(data)
+        let napHrs = data.naps.filter { $0.day == data.latest?.day }.compactMap { $0.hours }.reduce(0, +)
         VStack(alignment: .leading, spacing: 18) {
             ExpandableCard(id: "ov.recovery", title: "Recovery %", accent: P.green, canExpand: data.latest != nil,
                            makeChart: { exp, sel in AnyView(recoveryScoreChart(data, expanded: exp, sel: sel)) }) {
@@ -1111,6 +1125,13 @@ struct OverviewSection: View {
                             kv("Performance", slp?.performance.map { "\(Int($0.rounded()))%" } ?? "--")
                             kv("Efficiency", slp?.efficiency.map { "\(Int($0.rounded()))%" } ?? "--")
                             kv("Sleep need", fmtHrs(slp?.need_hours))
+                            if napHrs > 0 {
+                                HStack {
+                                    Label("Nap", systemImage: "moon.zzz.fill").font(.system(size: 12)).foregroundStyle(P.blue)
+                                    Spacer()
+                                    Text(fmtHrs(napHrs)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                                }
+                            }
                             Sparkline(values: data.sleep.suffix(30).compactMap { $0.hours }, color: P.blue)
                         }
                     }
@@ -1346,6 +1367,29 @@ struct SleepSection: View {
                     .scrollZoom(active: expanded, firstDay: data.sleep.first?.day, lastDay: data.sleep.last?.day)
                     .frame(height: expanded ? nil : 170)
                     .frame(maxHeight: expanded ? .infinity : nil)
+                }
+            }
+            // Naps — WHOOP records these separately from the night's sleep.
+            Glass(title: "Naps", accent: P.blue) {
+                if data.naps.isEmpty {
+                    emptyState("moon.zzz.fill", "No naps in this range", accent: P.blue)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(data.naps.reversed()) { nap in
+                            HStack(spacing: 12) {
+                                Image(systemName: "moon.zzz.fill").font(.system(size: 15)).foregroundStyle(P.blue)
+                                    .frame(width: 32, height: 32).background(P.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(napDate(nap.day)).font(.system(size: 13.5, weight: .semibold))
+                                    if let t = napClock(nap.start) {
+                                        Text(t).font(.system(size: 11)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Text(fmtHrs(nap.hours)).font(.system(size: 18, weight: .bold, design: .rounded)).monospacedDigit()
+                            }
+                        }
+                    }
                 }
             }
         }
